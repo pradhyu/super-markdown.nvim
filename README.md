@@ -56,12 +56,15 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
 
 ### 3. High-Speed TOC Viewer with Telescope Search
 - **Telescope Heading Finder (`<leader>mo`)**:
-  - Hierarchical tree display with indented level icons.
+  - Hierarchical tree display with indented level icons in natural top-to-bottom document order.
   - Live fuzzy search across all document headings.
-  - Contextual split previewer highlighting the exact line in your buffer.
+  - Contextual split previewer that automatically scrolls to and highlights the target heading in the preview window.
   - `<CR>` jumps to the heading and unfolds folds (`zv`).
 - **Universal Fallback**: Automatically integrates with `Snacks.picker` or `vim.ui.select` if Telescope is not installed.
-- **Document Outline Sidebar (`<leader>ms`)**: Floating / split outline sidebar displaying the document table of contents.
+- **Document Outline Sidebar (`<leader>ms`)**:
+  - Split outline sidebar displaying the document table of contents.
+  - Live scrolling: moving up and down the sidebar automatically scrolls the markdown viewer to the highlighted section.
+  - Pressing `<CR>` jumps to the selected heading and switches focus directly to the markdown viewer.
 
 ### 4. Automated Table Alignment & Authoring Tools
 - **Automated In-Line Column Alignment**: Ragged or unaligned Markdown tables are automatically rendered with perfectly aligned columns, custom alignment indicators (`:---`, `:---:`, `---:`), and box-drawing borders without modifying the buffer text.
@@ -69,6 +72,19 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
 - **Table Cell Navigation**: Press `<Tab>` to jump to the next cell and `<S-Tab>` to the previous cell. Pressing `<Tab>` on the last cell automatically adds a new row!
 - **Smart List Continuation**: Pressing `<CR>` in insert mode automatically continues unordered (`- `, `* `, `+ `) and numbered (`1. `) lists.
 - **Smart Link Follow & Paste (`<leader>ml` / `gx`)**: Open URLs in your browser or jump directly to local Markdown notes.
+
+### 5. Hierarchical Heading Folding with Gutter Indicators
+- **Gutter Fold Indicators (`+` and `-`)**:
+  - Open folds display `-` in the fold column, closed folds display `+`, and nested lines display `│`.
+- **Hierarchical Folds**:
+  - H1 headings fold all subheadings down to the next H1; nested H2–H6 headings create structured sub-folds.
+- **Stylized Fold Text**:
+  - Closed folds render clean headings with level icons and line counts: ` 󰲡 Section Name  ⋯ (12 lines)`.
+- **Fold All & Unfold All**:
+  - Fold all sections at once via `:SuperMarkdown fold_all` or `<leader>mzM` (`zM`).
+  - Unfold all sections at once via `:SuperMarkdown unfold_all` or `<leader>mzR` (`zR`).
+  - Toggle individual section folds via `:SuperMarkdown fold_toggle` or `<leader>mza` (`za`).
+  - Fold to specific depth via `:SuperMarkdown fold_level <N>`.
 
 ---
 
@@ -125,6 +141,9 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>mx` | `:SuperMarkdown checkbox` | Toggle / cycle checkbox state |
 | Normal | `<leader>mtf`| `:SuperMarkdown table_format`| Auto-format & align Markdown table |
 | Normal | `<leader>ml` | `:SuperMarkdown link` | Follow Markdown link under cursor |
+| Normal | `<leader>mzM`| `:SuperMarkdown fold_all` | Fold all markdown sections (`zM`) |
+| Normal | `<leader>mzR`| `:SuperMarkdown unfold_all` | Unfold all markdown sections (`zR`) |
+| Normal | `<leader>mza`| `:SuperMarkdown fold_toggle` | Toggle fold under cursor (`za`) |
 | Insert | `<CR>` | *(smart list)* | Auto-continue list bullet / number |
 | Normal/Insert | `<Tab>` | *(table)* | Jump to next table cell |
 | Normal/Insert | `<S-Tab>` | *(table)* | Jump to previous table cell |
@@ -143,6 +162,8 @@ require("super-markdown").setup({
 
   render = {
     enabled = true,
+    conceallevel = 2,
+    concealcursor = "c", -- keeps current line revealed in normal/insert modes for easy editing
     headings = {
       enabled = true,
       icons = { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " },
@@ -161,6 +182,8 @@ require("super-markdown").setup({
     codeblocks = {
       enabled = true,
       border = true,
+      border_char = "│",
+      width = 60,
       show_language = true,
     },
     dividers = {
@@ -171,6 +194,17 @@ require("super-markdown").setup({
       enabled = true,
       icon = "󰌹 ",
     },
+  },
+
+  -- Markdown folding options (+ and - in gutter)
+  folds = {
+    enabled = true,
+    foldcolumn = "1",       -- "1", "2", "auto" ("0" to disable fold column)
+    foldlevel = 99,        -- initial fold level: 99 opens all on open; 0 folds all
+    foldopen = "-",        -- gutter symbol for open fold
+    foldclose = "+",       -- gutter symbol for closed fold
+    foldsep = "│",         -- gutter symbol for open fold separator line
+    foldtext = true,       -- styled foldtext with heading icon and line count
   },
 
   mermaid = {
@@ -198,6 +232,21 @@ require("super-markdown").setup({
     auto_link_paste = true,
     table_helpers = true,
   },
+
+  keymaps = {
+    toggle_render = "<leader>mr",
+    toc = "<leader>mo",
+    toc_sidebar = "<leader>ms",
+    mermaid_preview = "<leader>mp",
+    toggle_checkbox = "<leader>mx",
+    format_table = "<leader>mtf",
+    follow_link = "<leader>ml",
+    fold_all = "<leader>mzM",
+    unfold_all = "<leader>mzR",
+    fold_toggle = "<leader>mza",
+    table_next = "<Tab>",
+    table_prev = "<S-Tab>",
+  },
 })
 ```
 
@@ -216,6 +265,3 @@ nvim --headless -u NONE -c "luafile tests/run_all.lua"
 ## 📄 License
 
 MIT License. See [LICENSE](./LICENSE) for details.
-# super-markdown.nvim
-# super-markdown.nvim
-# super-markdown.nvim
