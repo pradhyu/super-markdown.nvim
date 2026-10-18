@@ -1,8 +1,10 @@
 local preview = require("super-markdown.mermaid.preview")
 local ascii = require("super-markdown.mermaid.ascii")
+local syntax = require("super-markdown.mermaid.syntax")
 local config = require("super-markdown.config")
 
 local M = {}
+M.syntax = syntax
 
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_mermaid")
 local diagram_cache = {} -- hash -> virt_lines
@@ -122,6 +124,11 @@ function M.render_inline(bufnr, ns_id, opts)
           conceal = "",
           priority = 90,
         })
+      end
+    else
+      -- 4. Syntax highlight the raw mermaid code block lines
+      if opts.syntax ~= false and block.end_lnum - block.start_lnum > 1 then
+        syntax.highlight_block(bufnr, ns_id, block.start_lnum, block.end_lnum - 2)
       end
     end
   end

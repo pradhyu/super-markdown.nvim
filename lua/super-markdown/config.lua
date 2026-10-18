@@ -123,6 +123,7 @@ M.defaults = {
   -- Mermaid diagram options
   mermaid = {
     enabled = true,
+    syntax = true, -- syntax highlight raw mermaid diagram text in buffer
     inline = true, -- automatically render diagram in line inside the active buffer
     conceal_code = false, -- optionally conceal raw mermaid code block lines
     backend = "auto", -- "auto" (kitty/icat or ascii), "kitty", "ascii", "browser"

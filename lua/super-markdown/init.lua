@@ -19,6 +19,20 @@ function M.setup(user_opts)
   -- Register global autocommands
   local augroup = vim.api.nvim_create_augroup("SuperMarkdownGlobal", { clear = true })
 
+  -- Register mermaid in vim markdown_fenced_languages
+  local fenced = vim.g.markdown_fenced_languages or {}
+  local has_mmd = false
+  for _, l in ipairs(fenced) do
+    if l == "mermaid" or l == "mmd=mermaid" then
+      has_mmd = true
+      break
+    end
+  end
+  if not has_mmd then
+    table.insert(fenced, "mermaid")
+    vim.g.markdown_fenced_languages = fenced
+  end
+
   vim.api.nvim_create_autocmd("FileType", {
     group = augroup,
     pattern = config.options.filetypes,

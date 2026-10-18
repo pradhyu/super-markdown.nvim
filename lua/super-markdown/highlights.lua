@@ -56,10 +56,19 @@ function M.setup()
   -- Links
   set_hl("SuperMarkdownLink", { fg = "#7dcfff", underline = true })
 
-  -- Mermaid Indicators
+  -- Mermaid Indicators & Syntax Highlighting
   set_hl("SuperMarkdownMermaidReady", { fg = "#9ece6a", bold = true })
   set_hl("SuperMarkdownMermaidWait", { fg = "#e0af68", italic = true })
   set_hl("SuperMarkdownMermaidError", { fg = "#f7768e" })
+  set_hl("SuperMarkdownMermaidKeyword", { fg = "#bb9af7", bold = true })
+  set_hl("SuperMarkdownMermaidType", { fg = "#7dcfff", bold = true })
+  set_hl("SuperMarkdownMermaidArrow", { fg = "#f7768e", bold = true })
+  set_hl("SuperMarkdownMermaidNodeId", { fg = "#e0af68", bold = true })
+  set_hl("SuperMarkdownMermaidNodeLabel", { fg = "#9ece6a" })
+  set_hl("SuperMarkdownMermaidEdgeLabel", { fg = "#7aa2f7" })
+  set_hl("SuperMarkdownMermaidComment", { fg = "#565f89", italic = true })
+  set_hl("SuperMarkdownMermaidString", { fg = "#9ece6a" })
+  set_hl("SuperMarkdownMermaidNumber", { fg = "#ff9e64" })
 
   -- TOC Sidebar
   set_hl("SuperMarkdownTocTitle", { fg = "#bb9af7", bold = true })

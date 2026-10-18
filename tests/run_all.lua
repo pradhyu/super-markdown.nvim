@@ -269,6 +269,58 @@ assert_eq(vim.fn.foldclosed(1), 1, "SuperMarkdown fold_all command closed folds"
 vim.cmd("SuperMarkdown unfold_all")
 assert_eq(vim.fn.foldclosed(1), -1, "SuperMarkdown unfold_all command opened folds")
 
+-- 10. Test Mermaid Diagram Syntax Highlighting
+print("\n[Test 10] Mermaid Diagram Syntax Highlighting")
+local m_syntax = require("super-markdown.mermaid.syntax")
+
+-- Tokenize line tests
+local tokens1 = m_syntax.tokenize_line("graph TD")
+assert_eq(#tokens1, 2, "2 tokens in 'graph TD'")
+assert_eq(tokens1[1][3], "SuperMarkdownMermaidKeyword", "Keyword 'graph' matched")
+assert_eq(tokens1[2][3], "SuperMarkdownMermaidType", "Direction 'TD' matched")
+
+local tokens2 = m_syntax.tokenize_line("    Client[Web Client] -->|HTTP| Gateway{API GW}")
+local tok_groups = {}
+for _, t in ipairs(tokens2) do
+  table.insert(tok_groups, t[3])
+end
+assert_eq(vim.tbl_contains(tok_groups, "SuperMarkdownMermaidNodeId"), true, "NodeId matched")
+assert_eq(vim.tbl_contains(tok_groups, "SuperMarkdownMermaidNodeLabel"), true, "NodeLabel matched")
+assert_eq(vim.tbl_contains(tok_groups, "SuperMarkdownMermaidArrow"), true, "Arrow matched")
+assert_eq(vim.tbl_contains(tok_groups, "SuperMarkdownMermaidEdgeLabel"), true, "EdgeLabel |HTTP| matched")
+
+-- In-Buffer Mermaid Syntax Highlighting test
+local m_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(m_buf, 0, -1, false, {
+  "# Architecture",
+  "```mermaid",
+  "graph TD",
+  "    A[Start] --> B[End]",
+  "```",
+})
+local m_win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_buf(m_win, m_buf)
+
+local sm_render = require("super-markdown.render")
+sm_render.render(m_buf)
+
+-- Check extmarks in render namespace
+local sm_render = require("super-markdown.render")
+local r_ns = sm_render.get_namespace()
+local m_marks = vim.api.nvim_buf_get_extmarks(m_buf, r_ns, 0, -1, { details = true })
+local found_kw = false
+local found_arrow = false
+for _, em in ipairs(m_marks) do
+  local d = em[4]
+  if d.hl_group == "SuperMarkdownMermaidKeyword" then
+    found_kw = true
+  elseif d.hl_group == "SuperMarkdownMermaidArrow" then
+    found_arrow = true
+  end
+end
+assert_eq(found_kw, true, "Mermaid keyword highlighted with extmark in buffer")
+assert_eq(found_arrow, true, "Mermaid arrow highlighted with extmark in buffer")
+
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")
