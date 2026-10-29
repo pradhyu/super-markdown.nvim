@@ -73,6 +73,15 @@ function M.setup()
   -- TOC Sidebar
   set_hl("SuperMarkdownTocTitle", { fg = "#bb9af7", bold = true })
   set_hl("SuperMarkdownTocActive", { fg = "#7aa2f7", bg = "#24283b", bold = true })
+
+  -- Spec & LLM Traceability Badges
+  set_hl("SuperMarkdownSpecBadgeImpl", { fg = "#7dcfff", bg = "#1b2838", bold = true })
+  set_hl("SuperMarkdownSpecBadgeTest", { fg = "#9ece6a", bg = "#1e2a22", bold = true })
+  set_hl("SuperMarkdownSpecReqId", { fg = "#ff9e64", bold = true })
+
+  -- Header Folder Icons
+  set_hl("SuperMarkdownFolderOpen", { fg = "#e0af68", bold = true })
+  set_hl("SuperMarkdownFolderClosed", { fg = "#7aa2f7", bold = true })
 end
 
 return M

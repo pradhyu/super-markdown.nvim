@@ -87,6 +87,29 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
   - Toggle individual section folds via `:SuperMarkdown fold_toggle` or `<leader>mza` (`za`).
   - Fold to specific depth via `:SuperMarkdown fold_level <N>`.
 
+### 6. Spec-Driven Development (SDD) & LLM Workflow Suite
+Built for modern developers who write, maintain, and navigate technical specifications to drive LLM code and test generation:
+- **Live Heading Progress & Traceability Badges**:
+  - Headings automatically display section task rollups (`󰄵 3/5`), blockers (`󰀦 1`), open questions (`󰋽 1`), and implementation/test badges (`󰅩 impl`, `󰙨 test`)—even when folded!
+  - Document status headers (`> **Document Status**: APPROVED` or `status: DRAFT`) render semantic status badges and can be cycled with `<leader>msd` (`:SuperMarkdown spec_status`).
+- **Spec Health & Traceability Dashboard (`<leader>mss` / `:SuperMarkdown spec_dashboard`)**:
+  - Interactive floating HUD showing overall Spec Readiness Score (`0-100`), visual task completion bar, section rollups, open questions (`[?]`), blockers (`[!]`), verified `@impl`/`@test` file links, and clarity lint checks. Press `<CR>` on any item to jump straight to that line.
+- **Semantic Spec Explorer (`<leader>msp` / `:SuperMarkdown spec_pick [filter]`)**:
+  - Fuzzy-search across all open questions (`question`), blockers (`blocker`), requirements (`requirement`, e.g., `REQ-01`), tasks (`task`), Mermaid diagrams (`diagram`), tables (`table`), and code traceability references (`ref`).
+- **Spec Linter for LLM Clarity (`<leader>msl` / `:SuperMarkdown spec_lint`)**:
+  - Publishes Neovim diagnostics (`vim.diagnostic`) flagging vague/ambiguous specification language (*"should be fast"*, *"handle errors gracefully"*, *"etc."*, *"TBD"*), unresolved `[?]` questions, `[!]` blockers, and missing `@impl:` / `@test:` target files.
+- **Spec Template Scaffolder (`<leader>msn` / `:SuperMarkdown spec_new [template]`)**:
+  - Instant scaffolding for `architecture`, `feature`, `api`, and `test_plan` specs complete with Mermaid diagrams, requirement tables, and `@impl`/`@test` tags.
+- **LLM Context Bundler & Prompt Studio (`<leader>my`, `<leader>mgc`, `<leader>mgt`, `<leader>mgr`)**:
+  - **Context Bundle (`<leader>my`)**: Extracts the active spec section + breadcrumb hierarchy + **auto-inlined source/test files** referenced via `@impl:` / `@test:` / Markdown links into a `<spec_context>` bundle on your clipboard with token estimates.
+  - **Generate Implementation Code (`<leader>mgc`)**: Opens the interactive **LLM Prompt Studio** with a structured implementation prompt for the active section. Edit in place, yank (`y`), or press `r` to dispatch directly to your CLI agent (`claude`, `gemini`, `llm`, `agy`).
+  - **Generate Application Tests (`<leader>mgt`)**: Converts the section's acceptance criteria, requirement IDs (`REQ-*`), Mermaid branches, and edge-case tables into a comprehensive test generation prompt.
+  - **Review & Co-Author Spec (`<leader>mgr`)**: Generates a critique prompt combining your spec section and any active lint warnings so the LLM can tighten edge cases, tables, and diagrams.
+- **Smart Code Reference Jump & Floating Peek (`<leader>ml` & `<leader>mK`)**:
+  - Jump to or peek inside `@impl: path/to/file.lua:42`, `[file](./path#L10-L25)`, inline `` `path/file.lua:10` ``, or `#heading-anchor` links in a floating preview window without leaving your spec.
+- **Executable Spec Code Blocks (`<leader>mrun` / `:SuperMarkdown run_block`)**:
+  - Execute `lua`, `bash`/`sh`, `python`, or `javascript` code blocks directly inside your spec and render live `󰄵 PASS` / `󰀦 FAIL` virtual lines beneath the block.
+
 ---
 
 ## 📦 Installation
@@ -141,10 +164,21 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>mp` | `:SuperMarkdown mermaid` | Preview Mermaid diagram under cursor |
 | Normal | `<leader>mx` | `:SuperMarkdown checkbox` | Toggle / cycle checkbox state |
 | Normal | `<leader>mtf`| `:SuperMarkdown table_format`| Auto-format & align Markdown table |
-| Normal | `<leader>ml` | `:SuperMarkdown link` | Follow Markdown link under cursor |
+| Normal | `<leader>ml` | `:SuperMarkdown link` | Follow Markdown link, `#anchor`, or `@impl`/`@test` file |
+| Normal | `<leader>mK` | `:SuperMarkdown preview_ref` | Peek at linked file / line range in floating window |
 | Normal | `<leader>mzM`| `:SuperMarkdown fold_all` | Fold all markdown sections (`zM`) |
 | Normal | `<leader>mzR`| `:SuperMarkdown unfold_all` | Unfold all markdown sections (`zR`) |
 | Normal | `<leader>mza`| `:SuperMarkdown fold_toggle` | Toggle fold under cursor (`za`) |
+| Normal | `<leader>mss`| `:SuperMarkdown spec_dashboard`| Open Spec Health & Traceability Dashboard |
+| Normal | `<leader>msp`| `:SuperMarkdown spec_pick` | Open Semantic Spec Picker (questions, reqs, diagrams, etc.) |
+| Normal | `<leader>msl`| `:SuperMarkdown spec_lint` | Run Spec Linter for ambiguity & missing links |
+| Normal | `<leader>msn`| `:SuperMarkdown spec_new` | Insert Spec Template (`architecture`, `feature`, `api`, `test_plan`) |
+| Normal | `<leader>msd`| `:SuperMarkdown spec_status` | Cycle Spec Document Status (`DRAFT` ➔ `REVIEW` ➔ `APPROVED`...) |
+| Normal | `<leader>my` | `:SuperMarkdown llm_context` | Copy Section + Linked Files LLM Context Bundle |
+| Normal | `<leader>mgc`| `:SuperMarkdown llm_code` | Open LLM Implementation Code Prompt Studio |
+| Normal | `<leader>mgt`| `:SuperMarkdown llm_tests` | Open LLM Application Test Suite Prompt Studio |
+| Normal | `<leader>mgr`| `:SuperMarkdown llm_review` | Open LLM Spec Review & Co-Author Prompt Studio |
+| Normal | `<leader>mrun`| `:SuperMarkdown run_block` | Execute code block under cursor inline |
 | Insert | `<CR>` | *(smart list)* | Auto-continue list bullet / number |
 | Normal/Insert | `<Tab>` | *(table)* | Jump to next table cell |
 | Normal/Insert | `<S-Tab>` | *(table)* | Jump to previous table cell |

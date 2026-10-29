@@ -2,12 +2,25 @@ local config = require("super-markdown.config")
 
 local M = {}
 
---- Calculate fold level for a markdown line
---- Headings define hierarchical folds:
---- # -> level 1 (>1)
---- ## -> level 2 (>2)
---- ### -> level 3 (>3)
---- Any text in between maintains the fold level (=)
+--- Check if a 1-indexed line number is inside a fenced code block (``` or ~~~)
+--- @param lnum number
+--- @return boolean
+local function is_in_codeblock(lnum)
+  local in_block = false
+  for i = 1, lnum - 1 do
+    local l = vim.fn.getline(i)
+    if l:match("^%s*```") or l:match("^%s*~~~") then
+      in_block = not in_block
+    end
+  end
+  return in_block
+end
+
+--- Calculate fold level for a markdown line.
+--- In "toc" mode (default), every heading (# through ######) starts a level-1 fold (>1)
+--- so that folding all sections (zM) keeps every heading visible as an interactive Table of Contents,
+--- folding only the body text beneath each heading.
+--- In "tree" mode, headings define nested folds (>1, >2, >3...).
 --- @param lnum number 1-indexed line number
 --- @return string fold expression result
 function M.foldexpr(lnum)
@@ -15,14 +28,18 @@ function M.foldexpr(lnum)
   local hashes = line:match("^%s*(#+)%s")
   if hashes then
     local level = #hashes
-    if level >= 1 and level <= 6 then
-      return ">" .. level
+    if level >= 1 and level <= 6 and not is_in_codeblock(lnum) then
+      local mode = (config.options and config.options.folds and config.options.folds.mode) or "toc"
+      if mode == "tree" then
+        return ">" .. level
+      end
+      return ">1"
     end
   end
   return "="
 end
 
---- Custom foldtext display showing heading icon, title, and line count
+--- Custom foldtext display showing indentation, closed folder icon, heading icon, title, spec task rollup, and line count
 --- @return string
 function M.foldtext()
   local start_lnum = vim.v.foldstart
@@ -30,18 +47,50 @@ function M.foldtext()
   local count = end_lnum - start_lnum + 1
   local start_line = vim.fn.getline(start_lnum)
 
+  -- Scan folded lines for task completion, blockers, and questions
+  local checked, total_tasks, blockers, questions = 0, 0, 0, 0
+  for l = start_lnum, end_lnum do
+    local line = vim.fn.getline(l)
+    local cb = line:match("^%s*[%-%*%+]%s+%[(.)%]") or line:match("^%s*%d+%.%s+%[(.)%]")
+    if cb then
+      if cb == "x" or cb == "X" then
+        checked = checked + 1
+        total_tasks = total_tasks + 1
+      elseif cb == " " or cb == "/" then
+        total_tasks = total_tasks + 1
+      elseif cb == "!" then
+        blockers = blockers + 1
+        total_tasks = total_tasks + 1
+      elseif cb == "?" then
+        questions = questions + 1
+      end
+    end
+  end
+
+  local spec_parts = {}
+  if total_tasks > 0 then
+    table.insert(spec_parts, string.format("󰄵 %d/%d", checked, total_tasks))
+  end
+  if blockers > 0 then
+    table.insert(spec_parts, string.format("󰀦 %d", blockers))
+  end
+  if questions > 0 then
+    table.insert(spec_parts, string.format("󰋽 %d", questions))
+  end
+  local spec_str = #spec_parts > 0 and ("  [" .. table.concat(spec_parts, " · ") .. "]") or ""
+
   local hashes, title = start_line:match("^%s*(#+)%s*(.*)$")
   if hashes then
     local level = math.min(#hashes, 6)
-    local icons = nil
-    if config.options and config.options.render and config.options.render.headings then
-      icons = config.options.render.headings.icons
-    end
+    local h_opts = (config.options and config.options.render and config.options.render.headings) or {}
+    local icons = h_opts.icons
     local icon = (icons and icons[level]) or (string.rep("#", level) .. " ")
-    return string.format(" %s%s  ⋯ (%d lines)", icon, title, count)
+    local folder = (h_opts.folder_icon ~= false) and (h_opts.closed_folder_icon or "󰉋 ") or ""
+    local indent = string.rep("  ", level - 1)
+    return string.format(" %s%s%s%s%s  ⋯ (%d lines)", indent, folder, icon, title, spec_str, count)
   end
 
-  return string.format(" %s  ⋯ (%d lines)", vim.trim(start_line), count)
+  return string.format(" %s%s  ⋯ (%d lines)", vim.trim(start_line), spec_str, count)
 end
 
 --- Apply fold settings to a specific window
@@ -106,21 +155,40 @@ function M.attach(bufnr)
   })
 end
 
---- Fold all sections in the current window
+--- Fold all sections in the current window so only TOC headers are visible
 function M.fold_all()
   vim.cmd("normal! zM")
-  vim.notify("SuperMarkdown: Folded all sections 󰘖", vim.log.levels.INFO)
+  vim.notify("SuperMarkdown: Folded to TOC headers (press <CR> or za on any header to unfold) 󰉋", vim.log.levels.INFO)
 end
+
+--- Alias for folding buffer to TOC-only header outline
+M.fold_toc = M.fold_all
 
 --- Unfold all sections in the current window
 function M.unfold_all()
   vim.cmd("normal! zR")
-  vim.notify("SuperMarkdown: Unfolded all sections 󰘕", vim.log.levels.INFO)
+  vim.notify("SuperMarkdown: Unfolded all sections 󰝰", vim.log.levels.INFO)
 end
 
 --- Toggle fold under cursor
 function M.toggle_fold()
   vim.cmd("normal! za")
+end
+
+--- Handle <CR> in Normal mode: if on a folded line or a Markdown heading, toggle fold!
+--- @return boolean handled
+function M.handle_normal_enter()
+  local lnum = vim.api.nvim_win_get_cursor(0)[1]
+  if vim.fn.foldclosed(lnum) ~= -1 then
+    vim.cmd("normal! zo")
+    return true
+  end
+  local line = vim.fn.getline(lnum)
+  if line:match("^%s*#+%s") and not is_in_codeblock(lnum) then
+    vim.cmd("normal! za")
+    return true
+  end
+  return false
 end
 
 --- Set fold level in current window

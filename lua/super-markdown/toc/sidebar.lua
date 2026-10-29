@@ -20,14 +20,25 @@ function M.close()
     pcall(vim.api.nvim_del_augroup_by_id, augroup_id)
     augroup_id = nil
   end
-  if M.is_open() then
-    pcall(vim.api.nvim_win_close, sidebar_win, true)
-  end
+  local win_to_close = sidebar_win
+  local buf_to_delete = sidebar_buf
+  local prev_win = source_win
+
   sidebar_win = nil
   sidebar_buf = nil
   source_buf = nil
   source_win = nil
   headings_cache = {}
+
+  if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+    pcall(vim.api.nvim_set_current_win, prev_win)
+  end
+  if win_to_close and vim.api.nvim_win_is_valid(win_to_close) then
+    pcall(vim.api.nvim_win_close, win_to_close, true)
+  end
+  if buf_to_delete and vim.api.nvim_buf_is_valid(buf_to_delete) then
+    pcall(vim.api.nvim_buf_delete, buf_to_delete, { force = true })
+  end
 end
 
 function M.toggle()
@@ -223,33 +234,39 @@ function M.open()
 
   -- Keybindings inside sidebar
   local set_keymap = function(key, fn)
-    vim.keymap.set("n", key, fn, { buffer = sidebar_buf, nowait = true, silent = true })
+    vim.keymap.set("n", key, fn, { buffer = sidebar_buf, nowait = true, silent = true, noremap = true })
   end
 
-  set_keymap("q", M.close)
-  set_keymap("<Esc>", M.close)
-  set_keymap("<CR>", function() M.jump_to_heading(true) end)
-  set_keymap("o", function() M.jump_to_heading(true) end)
+  local function bind_sidebar_keys()
+    if not (sidebar_buf and vim.api.nvim_buf_is_valid(sidebar_buf)) then return end
+    set_keymap("q", M.close)
+    set_keymap("Q", M.close)
+    set_keymap("<Esc>", M.close)
+    set_keymap("<CR>", function() M.jump_to_heading(true) end)
+    set_keymap("o", function() M.jump_to_heading(true) end)
 
-  -- Mouse click navigation: move focus to editor at heading, keep sidebar open
-  set_keymap("<LeftMouse>", function()
-    local mouse = vim.fn.getmousepos()
-    if mouse.winid == sidebar_win and mouse.line > 2 then
-      pcall(vim.api.nvim_win_set_cursor, sidebar_win, { mouse.line, 0 })
-      M.jump_to_heading(true)
-    end
-  end)
-  set_keymap("<2-LeftMouse>", function()
-    local mouse = vim.fn.getmousepos()
-    if mouse.winid == sidebar_win and mouse.line > 2 then
-      pcall(vim.api.nvim_win_set_cursor, sidebar_win, { mouse.line, 0 })
-      M.jump_to_heading(true)
-    end
-  end)
+    -- Mouse click navigation: move focus to editor at heading, keep sidebar open
+    set_keymap("<LeftMouse>", function()
+      local mouse = vim.fn.getmousepos()
+      if mouse.winid == sidebar_win and mouse.line > 2 then
+        pcall(vim.api.nvim_win_set_cursor, sidebar_win, { mouse.line, 0 })
+        M.jump_to_heading(true)
+      end
+    end)
+    set_keymap("<2-LeftMouse>", function()
+      local mouse = vim.fn.getmousepos()
+      if mouse.winid == sidebar_win and mouse.line > 2 then
+        pcall(vim.api.nvim_win_set_cursor, sidebar_win, { mouse.line, 0 })
+        M.jump_to_heading(true)
+      end
+    end)
 
-  set_keymap("<Tab>", function() M.jump_to_heading(false) end)
-  set_keymap("p", function() M.jump_to_heading(false) end)
-  set_keymap("r", M.refresh)
+    set_keymap("<Tab>", function() M.jump_to_heading(false) end)
+    set_keymap("p", function() M.jump_to_heading(false) end)
+    set_keymap("r", M.refresh)
+  end
+
+  bind_sidebar_keys()
 
   -- Autocommands for live sync and auto-refresh
   augroup_id = vim.api.nvim_create_augroup("SuperMarkdownTocSidebar_" .. source_buf, { clear = true })
@@ -262,6 +279,11 @@ function M.open()
     group = augroup_id,
     buffer = sidebar_buf,
     callback = function() M.preview_heading() end,
+  })
+  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
+    group = augroup_id,
+    buffer = sidebar_buf,
+    callback = function() bind_sidebar_keys() end,
   })
   vim.api.nvim_create_autocmd({ "TextChanged", "BufWritePost" }, {
     group = augroup_id,

@@ -12,6 +12,10 @@ M.defaults = {
     concealcursor = "c", -- "c" keeps current line visible while editing in normal & insert mode
     headings = {
       enabled = true,
+      spec_badges = true, -- render live task rollup, blocker, question, and @impl/@test badges on headings
+      folder_icon = true, -- render folder icon (󰝰 open / 󰉋 closed) in headers
+      open_folder_icon = "󰝰 ",
+      closed_folder_icon = "󰉋 ",
       icons = { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " },
       signs = { "◉", "○", "✸", "◇", "▪", "▫" },
       backgrounds = {
@@ -160,12 +164,28 @@ M.defaults = {
   -- Markdown folding options
   folds = {
     enabled = true,
+    mode = "toc",           -- "toc" (each header folds its own section so folding shows only TOC headers) or "tree"
     foldcolumn = "1",       -- "1", "2", "auto" ("0" to disable fold column)
-    foldlevel = 99,        -- initial fold level: 99 opens all on open; 0 folds all
+    foldlevel = 99,        -- initial fold level: 99 opens all on open; 0 starts folded as TOC
     foldopen = "-",        -- gutter symbol for open fold
     foldclose = "+",       -- gutter symbol for closed fold
     foldsep = "│",         -- gutter symbol for open fold separator line
-    foldtext = true,       -- styled foldtext with heading icon and line count
+    foldtext = true,       -- styled foldtext with folder icon, heading icon, and line count
+    enter_toggle = true,   -- press <CR> on a heading in Normal mode to fold/unfold its section
+  },
+
+  -- Spec-Driven Development (SDD) options
+  spec = {
+    enabled = true,
+    auto_lint = false,     -- automatically publish spec lint diagnostics on BufWritePost
+  },
+
+  -- LLM Context Bundler & Prompt Generator options
+  llm = {
+    enabled = true,
+    open_studio = true,    -- open interactive floating prompt studio on code/test/review generation
+    include_linked_files = true, -- automatically inline referenced @impl/@test files in context bundle
+    cmd = "auto",          -- CLI tool for direct dispatch ("auto", "claude -p", "gemini -p", "llm", etc.)
   },
 
   -- Keybindings
@@ -177,9 +197,20 @@ M.defaults = {
     toggle_checkbox = "<leader>mx",
     format_table = "<leader>mtf",
     follow_link = "<leader>ml",
+    preview_ref = "<leader>mK",
     fold_all = "<leader>mzM",
     unfold_all = "<leader>mzR",
     fold_toggle = "<leader>mza",
+    spec_dashboard = "<leader>mss",
+    spec_pick = "<leader>msp",
+    spec_lint = "<leader>msl",
+    spec_new = "<leader>msn",
+    spec_status = "<leader>msd",
+    llm_context = "<leader>my",
+    llm_code = "<leader>mgc",
+    llm_tests = "<leader>mgt",
+    llm_review = "<leader>mgr",
+    run_block = "<leader>mrun",
     table_next = "<Tab>",
     table_prev = "<S-Tab>",
   },

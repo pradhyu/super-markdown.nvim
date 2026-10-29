@@ -6,6 +6,8 @@ local tables = require("super-markdown.render.tables")
 local codeblocks = require("super-markdown.render.codeblocks")
 local divider = require("super-markdown.render.divider")
 local links = require("super-markdown.render.links")
+local spec_tags = require("super-markdown.render.spec_tags")
+local analyzer = require("super-markdown.spec.analyzer")
 
 local mermaid = require("super-markdown.mermaid")
 
@@ -76,6 +78,15 @@ function M.render(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local line_count = #lines
 
+  -- Pre-compute section analysis for heading progress & traceability badges
+  local sec_by_lnum = {}
+  local ok_an, analysis = pcall(analyzer.analyze, bufnr)
+  if ok_an and analysis and analysis.sections then
+    for _, sec in ipairs(analysis.sections) do
+      sec_by_lnum[sec.lnum] = sec
+    end
+  end
+
   local prev_callout = nil
   local in_codeblock = nil
   local lnum = 0
@@ -99,8 +110,8 @@ function M.render(bufnr)
         tables.render_block(bufnr, NS_ID, tbl_start, tbl_end, lines, r_opts.tables)
         lnum = tbl_end + 1
       else
-        -- 3. Headings
-        headings.render(bufnr, NS_ID, lnum, line, r_opts.headings)
+        -- 3. Headings (with spec progress & traceability badges)
+        headings.render(bufnr, NS_ID, lnum, line, r_opts.headings, sec_by_lnum[lnum + 1])
 
         -- 4. Checkboxes
         checkboxes.render(bufnr, NS_ID, lnum, line, r_opts.checkboxes)
@@ -113,6 +124,9 @@ function M.render(bufnr)
 
         -- 7. Links
         links.render(bufnr, NS_ID, lnum, line, r_opts.links)
+
+        -- 8. Spec Tags (@impl, @test, REQ-IDs, Document Status)
+        spec_tags.render(bufnr, NS_ID, lnum, line, r_opts.spec_tags)
 
         lnum = lnum + 1
       end
