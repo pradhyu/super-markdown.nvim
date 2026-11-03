@@ -108,6 +108,13 @@ function M.render(bufnr)
         end
 
         tables.render_block(bufnr, NS_ID, tbl_start, tbl_end, lines, r_opts.tables)
+        -- Render inline links and spec tags inside table rows as well
+        for tl = tbl_start, tbl_end do
+          if not tables.is_table_separator(lines[tl + 1]) then
+            links.render(bufnr, NS_ID, tl, lines[tl + 1], r_opts.links)
+            spec_tags.render(bufnr, NS_ID, tl, lines[tl + 1], r_opts.spec_tags)
+          end
+        end
         lnum = tbl_end + 1
       else
         -- 3. Headings (with spec progress & traceability badges)

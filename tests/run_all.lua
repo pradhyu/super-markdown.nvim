@@ -87,6 +87,23 @@ assert_eq(#formatted_lines, 3, "Table should keep 3 lines")
 assert_eq(formatted_lines[1], "| Col1 | Longer Column 2 |", "Header row padded correctly")
 assert_eq(formatted_lines[3], "| a    | b               |", "Data row aligned to max column width")
 
+-- Test escaped pipes and inline code pipes in Table Formatter & Renderer
+local esc_tbl_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(esc_tbl_buf, 0, -1, false, {
+  "| Command | Arguments | Description |",
+  "| :--- | :--- | :--- |",
+  "| **`:SpotlightPick`** | `[jump\\|swap\\|close]` | Trigger picker |",
+  "| `:SpotlightDim` | `on` \\| `off` | Toggle dim |",
+})
+vim.api.nvim_set_current_buf(esc_tbl_buf)
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+tbl_tool.format({ bufnr = esc_tbl_buf, silent = true })
+local esc_formatted = vim.api.nvim_buf_get_lines(esc_tbl_buf, 0, -1, false)
+local tables_render = require("super-markdown.render.tables")
+assert_eq(#tables_render.find_unescaped_pipes(esc_formatted[3]), 4, "Escaped/code pipes ignored: exactly 4 column pipes in row 3")
+assert_eq(#tables_render.find_unescaped_pipes(esc_formatted[4]), 4, "Escaped pipes ignored: exactly 4 column pipes in row 4")
+assert_eq(tables_render.visual_cell_width("**`<leader>wf`**", 2), 10, "Visual cell width strips concealed ** and ` markers")
+
 -- 4. Test Mermaid Block Scanner
 print("\n[Test 4] Mermaid Block Scanner")
 local mmd_buf = vim.api.nvim_create_buf(false, true)
@@ -459,6 +476,91 @@ print("\n[Test 18] Spec Health & Traceability Dashboard")
 local dash = spec_mod.dashboard(spec_buf)
 assert_eq(dash ~= nil and vim.api.nvim_win_is_valid(dash.win), true, "Opened Spec Health Dashboard window")
 spec_mod.close_dashboard()
+
+-- 19. Test Live Read-Only Side Preview Pane (Full Rendering, Mermaid, Tables, Sync)
+print("\n[Test 19] Live Read-Only Side Preview Pane")
+local preview_pane = require("super-markdown.preview_pane")
+local pp_src_buf = vim.api.nvim_create_buf(false, true)
+vim.api.nvim_buf_set_lines(pp_src_buf, 0, -1, false, {
+  "# Live Preview Heading",
+  "",
+  "Paragraph with **bold text**, `inline_code`, and [Link](https://example.com).",
+  "",
+  "| Key | Action |",
+  "| :--- | :--- |",
+  "| **`<leader>mv`** | Toggle `[open\\|close]` |",
+  "",
+  "```mermaid",
+  "graph TD",
+  "    Edit[Editor Buffer] --> Preview[Read-Only Preview Pane]",
+  "```",
+  "",
+  "- [x] Completed task",
+  "- [ ] Pending task",
+})
+vim.api.nvim_win_set_buf(0, pp_src_buf)
+local editor_win = vim.api.nvim_get_current_win()
+
+preview_pane.open({ bufnr = pp_src_buf })
+assert_eq(preview_pane.is_open(), true, "Live preview side pane opened")
+assert_eq(vim.api.nvim_get_current_win(), editor_win, "Focus stays in editor window when preview opens")
+
+local p_buf = preview_pane.get_buffer()
+local p_win = preview_pane.get_window()
+assert_eq(vim.bo[p_buf].readonly, true, "Preview buffer is read-only")
+assert_eq(vim.bo[p_buf].modifiable, false, "Preview buffer is non-modifiable")
+
+local p_lines = vim.api.nvim_buf_get_lines(p_buf, 0, -1, false)
+local joined = table.concat(p_lines, "\n")
+assert_eq(joined:find("%*%*") == nil, true, "Raw **bold** syntax markers stripped from preview pane")
+assert_eq(joined:find("```mermaid") == nil, true, "Raw ```mermaid fence hidden in preview pane")
+assert_eq(joined:find("Editor Buffer") ~= nil, true, "Mermaid diagram rendered directly inside preview pane")
+assert_eq(joined:find("┌") ~= nil and joined:find("┘") ~= nil, true, "Table rendered with full Unicode box borders in preview pane")
+assert_eq(joined:find("%[open|close%]") ~= nil, true, "Escaped pipe unescaped cleanly in preview pane")
+
+-- Test live sync on edit & cursor move (editor -> preview)
+vim.api.nvim_win_set_cursor(editor_win, { 15, 0 })
+preview_pane.sync_scroll()
+local p_cursor = vim.api.nvim_win_get_cursor(p_win)[1]
+assert_eq(p_cursor > 10, true, "Preview pane scrolled in sync with source cursor")
+
+-- Test reverse sync (preview -> editor)
+vim.api.nvim_set_current_win(p_win)
+vim.api.nvim_win_set_cursor(p_win, { 1, 0 })
+preview_pane.sync_from_preview("cursor")
+assert_eq(vim.api.nvim_win_get_cursor(editor_win)[1], 1, "Source editor synced with preview pane cursor")
+
+-- Test toggling sync directions (source-only, preview-only, off, both)
+preview_pane.set_sync("source")
+vim.api.nvim_win_set_cursor(p_win, { #p_lines, 0 })
+preview_pane.sync_from_preview("cursor")
+assert_eq(vim.api.nvim_win_get_cursor(editor_win)[1], 1, "Reverse sync disabled when sync_from_preview is false")
+preview_pane.set_sync("both")
+
+-- Test <CR> / jump_to_source takes focus and cursor back to editable buffer
+vim.api.nvim_win_set_cursor(p_win, { #p_lines, 0 })
+vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
+assert_eq(vim.api.nvim_get_current_win(), editor_win, "Pressing <CR> in preview pane focuses editable source buffer")
+assert_eq(vim.api.nvim_win_get_cursor(editor_win)[1], 15, "Pressing <CR> in preview pane jumps to matching source line")
+
+-- Test <2-LeftMouse> mapping exists on preview buffer and jumps to editable buffer
+local has_dblclick = false
+for _, km in ipairs(vim.api.nvim_buf_get_keymap(p_buf, "n")) do
+  if km.lhs == "<2-LeftMouse>" then
+    has_dblclick = true
+    break
+  end
+end
+assert_eq(has_dblclick, true, "Double-click (<2-LeftMouse>) keymap registered on preview pane buffer")
+
+-- Edit source buffer and verify live refresh updates preview buffer
+vim.api.nvim_buf_set_lines(pp_src_buf, 0, 1, false, { "# Updated Live Title" })
+preview_pane.refresh()
+local updated_p_lines = vim.api.nvim_buf_get_lines(p_buf, 0, 2, false)
+assert_eq(updated_p_lines[1]:find("Updated Live Title") ~= nil, true, "Preview pane live-updated when source buffer changed")
+
+preview_pane.close()
+assert_eq(preview_pane.is_open(), false, "Live preview side pane closed cleanly")
 
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then

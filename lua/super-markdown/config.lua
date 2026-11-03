@@ -159,6 +159,18 @@ M.defaults = {
     smart_lists = true,    -- auto continue list on <CR>
     auto_link_paste = true, -- paste URL over selection -> [text](url)
     table_helpers = true,  -- table formatting and tab navigation
+    auto_format_table = true, -- automatically format markdown tables on InsertLeave, <Tab>, and BufWritePre
+  },
+
+  -- Live Read-Only Side Preview Pane options
+  preview_pane = {
+    position = "right",        -- "left" or "right"
+    width = 0.5,               -- fraction of screen width (0.0-1.0) or fixed column count
+    wrap = true,               -- wrap lines cleanly inside preview pane
+    focus_on_open = false,     -- keep focus in editing window when toggling preview open
+    sync_scroll = true,        -- master toggle to enable/disable scroll sync
+    sync_from_source = true,   -- sync preview pane when scrolling/moving in editable buffer
+    sync_from_preview = true,  -- sync editable buffer when scrolling/moving in preview pane
   },
 
   -- Markdown folding options
@@ -191,6 +203,7 @@ M.defaults = {
   -- Keybindings
   keymaps = {
     toggle_render = "<leader>mr",
+    preview_pane = "<leader>mv",
     toc = "<leader>mo",
     toc_sidebar = "<leader>ms",
     mermaid_preview = "<leader>mp",

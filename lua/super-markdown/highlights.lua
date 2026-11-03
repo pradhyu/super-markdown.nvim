@@ -53,8 +53,11 @@ function M.setup()
   -- Dividers
   set_hl("SuperMarkdownDivider", { fg = "#414868" })
 
-  -- Links
+  -- Links & Inline Text Styles
   set_hl("SuperMarkdownLink", { fg = "#7dcfff", underline = true })
+  set_hl("SuperMarkdownBold", { fg = "#c0caf5", bold = true })
+  set_hl("SuperMarkdownItalic", { fg = "#bb9af7", italic = true })
+  set_hl("SuperMarkdownInlineCode", { fg = "#ff9e64", bg = "#24283b" })
 
   -- Mermaid Indicators & Syntax Highlighting
   set_hl("SuperMarkdownMermaidReady", { fg = "#9ece6a", bold = true })

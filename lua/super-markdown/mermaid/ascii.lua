@@ -22,6 +22,7 @@ end
 --- Parse a node string like `A[Start]`, `B{Choice?}`, `C[(Database)]`, etc.
 local function parse_node(str)
   if not str or str == "" then return nil end
+  str = str:gsub("<br%s*/?>", " / ")
   local id, shape, text
 
   -- Database: [(text)]
@@ -407,7 +408,19 @@ local function render_flowchart(code)
 
   for _, raw in ipairs(raw_lines) do
     local line = vim.trim(raw)
-    if not (line == "" or line:match("^%%") or line:match("^graph%s+") or line:match("^flowchart%s+")) then
+    if not (
+      line == ""
+      or line:match("^%%")
+      or line:match("^graph%s+")
+      or line:match("^flowchart%s+")
+      or line:match("^subgraph%s+")
+      or line == "end"
+      or line:match("^style%s+")
+      or line:match("^classDef%s+")
+      or line:match("^class%s+")
+      or line:match("^click%s+")
+      or line:match("^direction%s+")
+    ) then
       local left, arrow, label, right
       left, arrow, label, right = line:match("^(.-)%s*([%-%.=]+>)%s*|([^|]+)|%s*(.+)$")
       if not left then

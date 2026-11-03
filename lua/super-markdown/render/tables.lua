@@ -8,6 +8,68 @@ function M.is_table_separator(line)
   return line:match("^%s*|%s*[%:%-%s|]+%s*|%s*$") ~= nil and line:find("%-") ~= nil
 end
 
+--- Finds all column-delimiting pipe byte indices (1-based) in a table row,
+--- ignoring escaped pipes (`\|`) and pipes inside inline backtick code spans (`` `...` ``).
+function M.find_unescaped_pipes(line)
+  local pipes = {}
+  local i = 1
+  local len = #line
+  local in_code = false
+  local code_ticks = 0
+
+  while i <= len do
+    local ch = line:sub(i, i)
+    if ch == "\\" then
+      i = i + 2
+    elseif ch == "`" then
+      local ticks = 1
+      while i + ticks <= len and line:sub(i + ticks, i + ticks) == "`" do
+        ticks = ticks + 1
+      end
+      if not in_code then
+        in_code = true
+        code_ticks = ticks
+      elseif ticks == code_ticks then
+        in_code = false
+        code_ticks = 0
+      end
+      i = i + ticks
+    elseif ch == "|" and not in_code then
+      table.insert(pipes, i)
+      i = i + 1
+    else
+      i = i + 1
+    end
+  end
+  return pipes
+end
+
+--- Computes the rendered display width of a Markdown cell when `conceallevel >= 2` is active.
+--- Strips concealed inline Markdown markers (`**`, `__`, `*`, `` ` ``, `~~`, `\|`, `[text](url)`).
+function M.visual_cell_width(str, conceallevel)
+  if (conceallevel or 2) < 2 then
+    return vim.fn.strdisplaywidth(str)
+  end
+
+  local s = str
+  -- 1. Escaped pipes and characters: \| -> |
+  s = s:gsub("\\([|%*%_`~%[%]\\])", "%1")
+  -- 2. Markdown links [text](url) -> icon (2 cols) + text
+  s = s:gsub("(!?)%[([^%]]+)%]%(([^%)]+)%)", function(bang, text)
+    if bang == "!" then
+      return bang .. "[" .. text .. "]"
+    end
+    return "󰌹 " .. text
+  end)
+  -- 3. Bold / Strikethrough / Italic markers outside or around spans
+  s = s:gsub("%*%*(.-)%*%*", "%1")
+  s = s:gsub("__(.-)__", "%1")
+  s = s:gsub("~~(.-)~~", "%1")
+  -- 4. Inline code backticks `code` -> code
+  s = s:gsub("`+([^`]+)`+", "%1")
+  return vim.fn.strdisplaywidth(s)
+end
+
 --- Renders an entire contiguous table block with auto-alignment and box drawing
 function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
   if not (opts and opts.enabled ~= false) then return end
@@ -22,6 +84,15 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
   local head_sep = opts.head_sep or "─"
   local vertical = opts.vertical or "│"
 
+  local win = vim.fn.bufwinid(bufnr)
+  local conceallevel = 2
+  if win and win ~= -1 then
+    local ok, cl = pcall(vim.api.nvim_get_option_value, "conceallevel", { win = win })
+    if ok and type(cl) == "number" then
+      conceallevel = cl
+    end
+  end
+
   -- 1. Parse rows and find separator row
   local sep_idx = nil
   local rows = {}
@@ -33,13 +104,7 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
       sep_idx = lnum
     end
 
-    local pipes = {}
-    local p = 0
-    while true do
-      p = line:find("|", p + 1, true)
-      if not p then break end
-      table.insert(pipes, p)
-    end
+    local pipes = M.find_unescaped_pipes(line)
 
     local cells = {}
     for i = 1, #pipes - 1 do
@@ -49,12 +114,14 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
       local trimmed = vim.trim(raw)
       local lead_sp = raw:match("^(%s*)") or ""
       local trail_sp = raw:match("(%s*)$") or ""
+      local v_width = is_sep and vim.fn.strdisplaywidth(trimmed) or M.visual_cell_width(trimmed, conceallevel)
       table.insert(cells, {
         raw = raw,
         trimmed = trimmed,
         lead_len = #lead_sp,
         trail_len = #trail_sp,
-        width = vim.fn.strdisplaywidth(trimmed),
+        width = v_width,
+        raw_width = vim.fn.strdisplaywidth(trimmed),
         p_start = p_start,
         p_end = p_end,
       })

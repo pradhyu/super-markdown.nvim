@@ -12,6 +12,7 @@ local runner = require("super-markdown.tools.runner")
 local folds = require("super-markdown.folds")
 local spec = require("super-markdown.spec")
 local llm = require("super-markdown.llm")
+local preview_pane = require("super-markdown.preview_pane")
 
 local M = {}
 
@@ -66,6 +67,26 @@ function M.setup(user_opts)
       -- Attach buffer-local keymaps
       M.setup_buffer_keymaps(bufnr)
 
+      -- Auto-format markdown tables when finishing an edit (InsertLeave) or saving (BufWritePre)
+      if config.options.tools and config.options.tools.auto_format_table ~= false then
+        vim.api.nvim_create_autocmd("InsertLeave", {
+          buffer = bufnr,
+          callback = function()
+            if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modifiable then
+              table_tool.format({ bufnr = bufnr, silent = true })
+            end
+          end,
+        })
+        vim.api.nvim_create_autocmd("BufWritePre", {
+          buffer = bufnr,
+          callback = function()
+            if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modifiable then
+              table_tool.format_all({ bufnr = bufnr, silent = true })
+            end
+          end,
+        })
+      end
+
       -- Optional auto-lint on write
       if config.options.spec and config.options.spec.auto_lint then
         vim.api.nvim_create_autocmd("BufWritePost", {
@@ -96,6 +117,7 @@ function M.setup_buffer_keymaps(bufnr)
   end
 
   bmap("n", km.toggle_render, M.toggle, "Toggle in-buffer render")
+  bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
   bmap("n", km.toc, M.toc, "Table of Contents (Picker)")
   bmap("n", km.toc_sidebar, M.toc_sidebar, "Table of Contents (Sidebar)")
   bmap("n", km.mermaid_preview, M.mermaid_preview, "Mermaid Diagram Preview")
@@ -147,6 +169,9 @@ function M.reload()
     if toc_sidebar.is_open() then
       toc_sidebar.close()
     end
+    if preview_pane.is_open() then
+      preview_pane.close()
+    end
   end)
 
   for k, _ in pairs(package.loaded) do
@@ -182,6 +207,10 @@ end
 
 -- Public API
 M.toggle = render.toggle
+M.preview_pane = preview_pane.toggle
+M.preview_open = preview_pane.open
+M.preview_close = preview_pane.close
+M.preview_sync = preview_pane.set_sync
 M.render = render.render
 M.clear = render.clear
 M.toc = toc_picker.open

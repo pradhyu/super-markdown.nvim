@@ -5,6 +5,9 @@ vim.g.loaded_super_markdown = true
 
 local subcommands = {
   toggle = function() require("super-markdown").toggle() end,
+  preview = function() require("super-markdown").preview_pane() end,
+  preview_pane = function() require("super-markdown").preview_pane() end,
+  preview_sync = function(args) require("super-markdown").preview_sync(args and args[2]) end,
   render = function() require("super-markdown").render() end,
   clear = function() require("super-markdown").clear() end,
   reload = function() require("super-markdown").reload() end,
