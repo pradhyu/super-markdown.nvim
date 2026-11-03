@@ -100,11 +100,17 @@ function M.render_inline(bufnr, ns_id, opts)
     end
 
     -- 1. Attach live rendered diagram as virt_lines right beneath the block
-    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, block.end_lnum - 1, 0, {
-      virt_lines = virt_lines,
-      virt_lines_above = false,
-      priority = 92,
-    })
+    -- (When the side Live Preview Pane is open, it renders the diagram on the right,
+    --  so we omit duplicate virt_lines in the editable buffer for smooth scrolling)
+    local preview_pane_open = package.loaded["super-markdown.preview_pane"]
+      and package.loaded["super-markdown.preview_pane"].is_open()
+    if not preview_pane_open then
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, block.end_lnum - 1, 0, {
+        virt_lines = virt_lines,
+        virt_lines_above = false,
+        priority = 92,
+      })
+    end
 
     -- 2. Add badge on the opening ```mermaid fence
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, block.start_lnum - 1, 0, {

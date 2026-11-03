@@ -751,14 +751,11 @@ function M.compile_document(bufnr, win_width)
             { 7, 41, "SuperMarkdownMermaidReady" },
           },
         })
-        local first_diag_p = #out_lines + 1
+        local p_block_start = #out_lines
 
         for d_idx, d_line in ipairs(diagram_lines) do
-          local mapped_src = block_start
-          if #code_lines > 0 then
-            local ratio = (#diagram_lines > 1) and ((d_idx - 1) / (#diagram_lines - 1)) or 0
-            mapped_src = block_start + 1 + math.floor(ratio * math.max(0, #code_lines - 1))
-          end
+          local ratio = (#diagram_lines > 1) and ((d_idx - 1) / (#diagram_lines - 1)) or 0
+          local mapped_src = block_start + math.floor(ratio * math.max(0, block_end - block_start) + 0.5)
           mapped_src = math.min(block_end, math.max(block_start, mapped_src))
           local padded_d = "  │ " .. d_line
           push_line(padded_d, mapped_src, {
@@ -771,16 +768,13 @@ function M.compile_document(bufnr, win_width)
         push_line(footer_str, block_end, {
           spans = { { 0, #footer_str, "SuperMarkdownCodeBorder" } },
         })
-        for s_idx = 1, #code_lines do
-          local s_l = block_start + s_idx
-          if #diagram_lines > 0 then
-            local ratio = (#code_lines > 1) and ((s_idx - 1) / (#code_lines - 1)) or 0
-            s2p[s_l] = first_diag_p + math.floor(ratio * math.max(0, #diagram_lines - 1))
-          else
-            s2p[s_l] = #out_lines
-          end
+        local p_block_end = #out_lines
+
+        -- Uniform block-stepping across [block_start .. block_end] -> [p_block_start .. p_block_end]
+        for s_l = block_start, block_end do
+          local ratio = (block_end > block_start) and ((s_l - block_start) / (block_end - block_start)) or 0
+          s2p[s_l] = p_block_start + math.floor(ratio * (p_block_end - p_block_start) + 0.5)
         end
-        s2p[block_end] = #out_lines
       else
         -- Render styled Code Block without raw ``` fences, with full syntax highlighting
         local cb_opts = r_opts.codeblocks or {}
@@ -831,17 +825,16 @@ function M.compile_document(bufnr, win_width)
       end
 
       local t_lines, t_meta = compile_table_block(src_lines, tbl_start, tbl_end, r_opts.tables)
+      local p_tbl_start = #out_lines + 1
       for t_i, tl in ipairs(t_lines) do
         local m = t_meta[t_i] or {}
         local s_l = m.src_lnum or tbl_start
         push_line(tl, s_l, m)
-        -- Map source table row to its content line rather than the top/bottom box border
-        if t_i > 1 and t_i < #t_lines then
-          s2p[s_l] = #out_lines
-        end
       end
+      local p_tbl_end = #out_lines
       for s_l = tbl_start, tbl_end do
-        if not s2p[s_l] then s2p[s_l] = #out_lines end
+        local ratio = (tbl_end > tbl_start) and ((s_l - tbl_start) / (tbl_end - tbl_start)) or 0
+        s2p[s_l] = p_tbl_start + math.floor(ratio * (p_tbl_end - p_tbl_start) + 0.5)
       end
 
       prev_callout = nil
@@ -1241,9 +1234,12 @@ function M.set_sync(mode)
 end
 
 --- Sync preview pane cursor & viewport from editable source window
-function M.sync_from_source(mode)
+function M.sync_from_source()
   local from_src, _ = get_sync_flags()
   if not from_src or is_syncing or not M.is_open() then
+    return
+  end
+  if vim.api.nvim_get_current_win() == preview_win then
     return
   end
   local s_win = resolve_source_win()
@@ -1256,38 +1252,29 @@ function M.sync_from_source(mode)
     local src_cursor = vim.api.nvim_win_get_cursor(s_win)[1]
     local src_top = vim.fn.line("w0", s_win)
     local target_p_line = map_source_to_preview(src_cursor)
-    local target_p_top = map_source_to_preview(src_top)
-    local p_win_h = math.max(1, vim.api.nvim_win_get_height(preview_win))
     local total_p = math.max(1, vim.api.nvim_buf_line_count(preview_buf))
+    local p_lnum = math.max(1, math.min(total_p, target_p_line))
 
-    local p_lnum = target_p_line
-    local p_top = target_p_top
-
-    if mode == "scroll" then
-      p_top = math.max(1, math.min(total_p, target_p_top))
-      p_lnum = math.max(p_top, math.min(total_p, math.min(target_p_line, p_top + p_win_h - 1)))
-    else
-      p_top = math.max(1, math.min(p_lnum, math.max(target_p_top, p_lnum - p_win_h + 2)))
-    end
+    -- Maintain exact relative window line offset in 1-to-1 sections and step proportionally across blocks
+    local offset = math.max(0, src_cursor - src_top)
+    local p_top = math.max(1, math.min(p_lnum, p_lnum - offset))
 
     vim.api.nvim_win_call(preview_win, function()
       vim.fn.winrestview({ lnum = p_lnum, topline = p_top, col = 0 })
     end)
     vim.api.nvim_win_set_cursor(preview_win, { p_lnum, 0 })
-
-    last_synced_p_top = vim.fn.line("w0", preview_win)
-    last_synced_p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
-    last_synced_s_top = src_top
-    last_synced_s_cursor = src_cursor
   end)
   is_syncing = false
   return ok
 end
 
 --- Sync editable source window cursor & viewport from preview pane
-function M.sync_from_preview(mode)
+function M.sync_from_preview()
   local _, from_prv = get_sync_flags()
   if not from_prv or is_syncing or not M.is_open() then
+    return
+  end
+  if vim.api.nvim_get_current_win() ~= preview_win then
     return
   end
   local s_win = resolve_source_win()
@@ -1300,29 +1287,16 @@ function M.sync_from_preview(mode)
     local p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
     local p_top = vim.fn.line("w0", preview_win)
     local target_s_line = map_preview_to_source(p_cursor)
-    local target_s_top = map_preview_to_source(p_top)
-    local s_win_h = math.max(1, vim.api.nvim_win_get_height(s_win))
     local total_s = math.max(1, vim.api.nvim_buf_line_count(source_buf))
+    local s_lnum = math.max(1, math.min(total_s, target_s_line))
 
-    local s_lnum = target_s_line
-    local s_top = target_s_top
-
-    if mode == "scroll" then
-      s_top = math.max(1, math.min(total_s, target_s_top))
-      s_lnum = math.max(s_top, math.min(total_s, math.min(target_s_line, s_top + s_win_h - 1)))
-    else
-      s_top = math.max(1, math.min(s_lnum, math.max(target_s_top, s_lnum - s_win_h + 2)))
-    end
+    local offset = math.max(0, p_cursor - p_top)
+    local s_top = math.max(1, math.min(s_lnum, s_lnum - offset))
 
     vim.api.nvim_win_call(s_win, function()
       vim.fn.winrestview({ lnum = s_lnum, topline = s_top, col = 0 })
     end)
     vim.api.nvim_win_set_cursor(s_win, { s_lnum, 0 })
-
-    last_synced_s_top = vim.fn.line("w0", s_win)
-    last_synced_s_cursor = vim.api.nvim_win_get_cursor(s_win)[1]
-    last_synced_p_top = p_top
-    last_synced_p_cursor = p_cursor
   end)
   is_syncing = false
   return ok
@@ -1333,9 +1307,9 @@ function M.sync_scroll()
     return
   end
   if vim.api.nvim_get_current_win() == preview_win then
-    M.sync_from_preview("cursor")
+    M.sync_from_preview()
   else
-    M.sync_from_source("cursor")
+    M.sync_from_source()
   end
 end
 
@@ -1351,9 +1325,8 @@ function M.jump_to_source()
   local p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
   local p_top = vim.fn.line("w0", preview_win)
   local src_lnum = map_preview_to_source(p_cursor)
-  local src_top = map_preview_to_source(p_top)
-  local s_win_h = math.max(1, vim.api.nvim_win_get_height(s_win))
-  src_top = math.max(1, math.min(src_lnum, math.max(src_top, src_lnum - s_win_h + 2)))
+  local offset = math.max(0, p_cursor - p_top)
+  local src_top = math.max(1, math.min(src_lnum, src_lnum - offset))
 
   is_syncing = true
   vim.api.nvim_set_current_win(s_win)
@@ -1362,11 +1335,9 @@ function M.jump_to_source()
     vim.cmd("normal! zv")
     vim.fn.winrestview({ lnum = src_lnum, topline = src_top, col = 0 })
   end)
-  last_synced_s_top = vim.fn.line("w0", s_win)
-  last_synced_s_cursor = src_lnum
   is_syncing = false
 
-  M.sync_from_source("cursor")
+  M.sync_from_source()
 end
 
 function M.close()
@@ -1383,6 +1354,7 @@ function M.close()
   local win_to_close = preview_win
   local buf_to_delete = preview_buf
   local prev_win = source_win
+  local prev_buf = source_buf
 
   preview_win = nil
   preview_buf = nil
@@ -1404,6 +1376,11 @@ function M.close()
   end
   if buf_to_delete and vim.api.nvim_buf_is_valid(buf_to_delete) then
     pcall(vim.api.nvim_buf_delete, buf_to_delete, { force = true })
+  end
+  if prev_buf and vim.api.nvim_buf_is_valid(prev_buf) then
+    pcall(function()
+      require("super-markdown.render").render(prev_buf)
+    end)
   end
 end
 
@@ -1512,6 +1489,11 @@ function M.open(opts)
   end
 
   M.refresh()
+  if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+    pcall(function()
+      require("super-markdown.render").render(source_buf)
+    end)
+  end
 
   -- Attach bidirectional live-sync autocommands on source and preview buffers/windows
   augroup_id = vim.api.nvim_create_augroup("SuperMarkdownPreviewPane_" .. source_buf, { clear = true })
@@ -1527,7 +1509,7 @@ function M.open(opts)
     buffer = source_buf,
     callback = function()
       if vim.api.nvim_get_current_win() ~= preview_win then
-        M.sync_from_source("cursor")
+        M.sync_from_source()
       end
     end,
   })
@@ -1536,7 +1518,7 @@ function M.open(opts)
     buffer = preview_buf,
     callback = function()
       if vim.api.nvim_get_current_win() == preview_win then
-        M.sync_from_preview("cursor")
+        M.sync_from_preview()
       end
     end,
   })
@@ -1553,32 +1535,10 @@ function M.open(opts)
       if is_syncing or not M.is_open() then
         return
       end
-      local s_win = resolve_source_win()
-      if not s_win then
-        return
-      end
-      local ev = vim.v.event or {}
-      local p_scrolled = ev[tostring(preview_win)] ~= nil
-      local s_scrolled = ev[tostring(s_win)] ~= nil
-
-      local p_top = vim.fn.line("w0", preview_win)
-      local s_top = vim.fn.line("w0", s_win)
-      local p_changed = (p_top ~= last_synced_p_top)
-      local s_changed = (s_top ~= last_synced_s_top)
-
-      local cur_win = vim.api.nvim_get_current_win()
-      if cur_win == preview_win then
-        if p_scrolled and p_changed then
-          M.sync_from_preview("scroll")
-        elseif s_scrolled and s_changed then
-          M.sync_from_source("scroll")
-        end
+      if vim.api.nvim_get_current_win() == preview_win then
+        M.sync_from_preview()
       else
-        if s_scrolled and s_changed then
-          M.sync_from_source("scroll")
-        elseif p_scrolled and p_changed then
-          M.sync_from_preview("scroll")
-        end
+        M.sync_from_source()
       end
     end,
   })
