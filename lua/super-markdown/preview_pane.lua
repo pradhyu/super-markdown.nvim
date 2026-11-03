@@ -1,4 +1,5 @@
 local config = require("super-markdown.config")
+local highlights = require("super-markdown.highlights")
 local tables = require("super-markdown.render.tables")
 local ascii = require("super-markdown.mermaid.ascii")
 local analyzer = require("super-markdown.spec.analyzer")
@@ -72,8 +73,12 @@ function M.format_inline(raw)
       local s_end, e_end, text, _ = raw:find("^%[([^%]]+)%]%(([^%)]+)%)", bracket_start)
       if s_end then
         local icon = is_img and "󰥶 " or ((config.options.render.links and config.options.render.links.icon) or "󰌹 ")
-        local clean_text = M.format_inline(text)
+        local clean_text, inner_spans = M.format_inline(text)
+        local base = out_len + #icon
         append(icon .. clean_text, "SuperMarkdownLink")
+        for _, sp in ipairs(inner_spans) do
+          table.insert(spans, { base + sp[1], base + sp[2], sp[3] })
+        end
         i = e_end + 1
       else
         append(ch, nil)
@@ -105,6 +110,7 @@ function M.format_inline(raw)
         local inner, inner_spans = M.format_inline(raw:sub(i + 3, c_start - 1))
         local base = out_len
         append(inner, "SuperMarkdownBold")
+        table.insert(spans, { base, out_len, "SuperMarkdownItalic" })
         for _, sp in ipairs(inner_spans) do
           table.insert(spans, { base + sp[1], base + sp[2], sp[3] })
         end
@@ -135,20 +141,30 @@ function M.format_inline(raw)
     elseif raw:sub(i, i + 1) == "~~" then
       local c_start, c_end = raw:find("~~", i + 2, true)
       if c_start then
-        local inner = M.format_inline(raw:sub(i + 2, c_start - 1))
+        local inner, inner_spans = M.format_inline(raw:sub(i + 2, c_start - 1))
+        local base = out_len
         append(inner, "SuperMarkdownCheckboxCanceled")
+        for _, sp in ipairs(inner_spans) do
+          table.insert(spans, { base + sp[1], base + sp[2], sp[3] })
+        end
         i = c_end + 1
       else
         append("~~", nil)
         i = i + 2
       end
 
-    -- 7. Italic: *text* (only when not followed by space)
-    elseif ch == "*" and raw:sub(i + 1, i + 1) ~= " " and raw:sub(i + 1, i + 1) ~= "" then
-      local c_start, c_end = raw:find("%*([^%*]+)%*", i)
-      if c_start == i then
-        local inner = M.format_inline(raw:sub(i + 1, c_end - 1))
+    -- 7. Italic: *text* or _text_ (only when not followed by space)
+    elseif (ch == "*" or ch == "_") and raw:sub(i + 1, i + 1) ~= " " and raw:sub(i + 1, i + 1) ~= "" then
+      local pat = (ch == "*") and "^%*([^%*]+)%*" or "^_([^_]+)_"
+      local c_start, c_end, inner_raw = raw:find(pat, i)
+      local prev_ch = (i > 1) and raw:sub(i - 1, i - 1) or ""
+      if c_start == i and not (ch == "_" and prev_ch:match("[%w]")) then
+        local inner, inner_spans = M.format_inline(inner_raw)
+        local base = out_len
         append(inner, "SuperMarkdownItalic")
+        for _, sp in ipairs(inner_spans) do
+          table.insert(spans, { base + sp[1], base + sp[2], sp[3] })
+        end
         i = c_end + 1
       else
         append(ch, nil)
@@ -175,7 +191,323 @@ function M.format_inline(raw)
     search_pos = e + 1
   end
 
+  -- Highlight @impl: and @test: traceability tags
+  for _, role in ipairs({ "impl", "test" }) do
+    local s, e = final_str:find("@" .. role .. "%s*:%s*[^%s,`%)%]]+")
+    if s and e then
+      local hl = (role == "test") and "SuperMarkdownSpecBadgeTest" or "SuperMarkdownSpecBadgeImpl"
+      table.insert(spans, { s - 1, e, hl })
+    end
+  end
+
   return final_str, spans
+end
+
+local TS_LANG_ALIASES = {
+  sh = "bash",
+  zsh = "bash",
+  shell = "bash",
+  console = "bash",
+  js = "javascript",
+  jsx = "javascript",
+  ts = "typescript",
+  tsx = "tsx",
+  py = "python",
+  yml = "yaml",
+  md = "markdown",
+  rs = "rust",
+  golang = "go",
+  ["c++"] = "cpp",
+  cxx = "cpp",
+  hpp = "cpp",
+  h = "c",
+}
+
+local TS_CAPTURE_FALLBACK = {
+  keyword = "SuperMarkdownMermaidKeyword",
+  ["function"] = "SuperMarkdownH1",
+  method = "SuperMarkdownH1",
+  string = "SuperMarkdownMermaidString",
+  character = "SuperMarkdownMermaidString",
+  comment = "SuperMarkdownMermaidComment",
+  number = "SuperMarkdownMermaidNumber",
+  float = "SuperMarkdownMermaidNumber",
+  boolean = "SuperMarkdownMermaidNumber",
+  constant = "SuperMarkdownMermaidNumber",
+  type = "SuperMarkdownMermaidType",
+  constructor = "SuperMarkdownMermaidType",
+  operator = "SuperMarkdownMermaidArrow",
+  property = "SuperMarkdownH2",
+  field = "SuperMarkdownH2",
+  variable = "SuperMarkdownBold",
+  parameter = "SuperMarkdownMermaidNodeId",
+  tag = "SuperMarkdownMermaidKeyword",
+  attribute = "SuperMarkdownMermaidNodeId",
+  punctuation = "SuperMarkdownTableBorder",
+}
+
+local function resolve_capture_hl(cap_name, ts_lang)
+  local prefix = cap_name:match("^([^%.]+)") or cap_name
+  if TS_CAPTURE_FALLBACK[prefix] then
+    return TS_CAPTURE_FALLBACK[prefix]
+  end
+  local lang_hl = "@" .. cap_name .. "." .. ts_lang
+  if vim.fn.hlexists(lang_hl) == 1 then
+    return lang_hl
+  end
+  local base_hl = "@" .. cap_name
+  if vim.fn.hlexists(base_hl) == 1 then
+    return base_hl
+  end
+  return nil
+end
+
+local LEXICAL_KEYWORDS = {
+  ["local"] = true, ["function"] = true, ["return"] = true, ["if"] = true, ["then"] = true,
+  ["else"] = true, ["elseif"] = true, ["end"] = true, ["for"] = true, ["in"] = true,
+  ["do"] = true, ["while"] = true, ["repeat"] = true, ["until"] = true, ["break"] = true,
+  ["continue"] = true, ["def"] = true, ["class"] = true, ["import"] = true, ["from"] = true,
+  ["as"] = true, ["pass"] = true, ["yield"] = true, ["async"] = true, ["await"] = true,
+  ["with"] = true, ["try"] = true, ["except"] = true, ["finally"] = true, ["raise"] = true,
+  ["const"] = true, ["let"] = true, ["var"] = true, ["export"] = true, ["default"] = true,
+  ["new"] = true, ["typeof"] = true, ["instanceof"] = true, ["switch"] = true, ["case"] = true,
+  ["fn"] = true, ["pub"] = true, ["mut"] = true, ["struct"] = true, ["enum"] = true,
+  ["impl"] = true, ["trait"] = true, ["use"] = true, ["mod"] = true, ["match"] = true,
+  ["where"] = true, ["crate"] = true, ["self"] = true, ["super"] = true, ["func"] = true,
+  ["package"] = true, ["defer"] = true, ["go"] = true, ["select"] = true, ["interface"] = true,
+  ["type"] = true, ["SELECT"] = true, ["FROM"] = true, ["WHERE"] = true, ["INSERT"] = true,
+  ["INTO"] = true, ["VALUES"] = true, ["UPDATE"] = true, ["SET"] = true, ["DELETE"] = true,
+  ["JOIN"] = true, ["LEFT"] = true, ["INNER"] = true, ["ON"] = true, ["GROUP"] = true,
+  ["BY"] = true, ["ORDER"] = true, ["LIMIT"] = true, ["CREATE"] = true, ["TABLE"] = true,
+  ["AND"] = true, ["OR"] = true, ["NOT"] = true, ["NULL"] = true, ["PRIMARY"] = true, ["KEY"] = true,
+}
+
+local LEXICAL_LITERALS = {
+  ["true"] = true, ["false"] = true, ["nil"] = true, ["null"] = true,
+  ["True"] = true, ["False"] = true, ["None"] = true, ["undefined"] = true,
+}
+
+local LEXICAL_TYPES = {
+  ["string"] = true, ["number"] = true, ["boolean"] = true, ["table"] = true, ["any"] = true,
+  ["void"] = true, ["int"] = true, ["float"] = true, ["double"] = true, ["char"] = true,
+  ["bool"] = true, ["usize"] = true, ["isize"] = true, ["u8"] = true, ["u16"] = true,
+  ["u32"] = true, ["u64"] = true, ["i8"] = true, ["i16"] = true, ["i32"] = true, ["i64"] = true,
+  ["f32"] = true, ["f64"] = true, ["str"] = true, ["String"] = true, ["Vec"] = true,
+  ["Option"] = true, ["Result"] = true, ["Map"] = true, ["List"] = true, ["Dict"] = true,
+  ["INT"] = true, ["INTEGER"] = true, ["VARCHAR"] = true, ["TEXT"] = true, ["BOOLEAN"] = true,
+  ["TIMESTAMP"] = true, ["SERIAL"] = true, ["UUID"] = true, ["JSONB"] = true,
+}
+
+--- Lexical fallback syntax highlighter for a single line of code (returns 0-indexed spans relative to line)
+local function highlight_code_line_lexical(line, lang)
+  local spans = {}
+  local n = #line
+
+  -- 1. Check full/trailing line comments (--, //, #)
+  local c_start = nil
+  if lang == "lua" or lang == "sql" then
+    c_start = line:find("%-%-")
+  elseif lang == "python" or lang == "bash" or lang == "sh" or lang == "zsh" or lang == "yaml" or lang == "toml" then
+    c_start = line:find("#")
+  else
+    c_start = line:find("//") or line:find("#")
+  end
+
+  local code_end = c_start and (c_start - 1) or n
+
+  -- 2. Highlight YAML/JSON/TOML key before colon/equals
+  local k_s, k_e = line:find("^%s*([%w_%-%.\"']+)%s*:")
+  if k_s and k_e and k_e <= code_end then
+    local colon = line:find(":", k_s, true)
+    if colon then
+      table.insert(spans, { k_s - 1, colon - 1, "SuperMarkdownH2" })
+    end
+  end
+
+  -- 3. Scan tokens up to comment start
+  local idx = 1
+  while idx <= code_end do
+    local ch = line:sub(idx, idx)
+
+    if ch == '"' or ch == "'" or ch == "`" then
+      local q = ch
+      local j = idx + 1
+      while j <= code_end do
+        local cj = line:sub(j, j)
+        if cj == "\\" then
+          j = j + 2
+        elseif cj == q then
+          j = j + 1
+          break
+        else
+          j = j + 1
+        end
+      end
+      table.insert(spans, { idx - 1, math.min(j - 1, code_end), "SuperMarkdownMermaidString" })
+      idx = j
+    elseif ch:match("%d") and (idx == 1 or not line:sub(idx - 1, idx - 1):match("[%w_]")) then
+      local _, num_e = line:find("^[%da-fA-FxX%.]+", idx)
+      if num_e then
+        table.insert(spans, { idx - 1, math.min(num_e, code_end), "SuperMarkdownMermaidNumber" })
+        idx = num_e + 1
+      else
+        idx = idx + 1
+      end
+    elseif ch:match("[%a_]") then
+      local _, id_e, word = line:find("^([%a_][%w_]*)", idx)
+      if id_e and word then
+        local next_ch = line:sub(id_e + 1, id_e + 1)
+        if LEXICAL_KEYWORDS[word] then
+          table.insert(spans, { idx - 1, id_e, "SuperMarkdownMermaidKeyword" })
+        elseif LEXICAL_LITERALS[word] then
+          table.insert(spans, { idx - 1, id_e, "SuperMarkdownMermaidNumber" })
+        elseif LEXICAL_TYPES[word] or word:match("^[A-Z][%w_]*$") then
+          table.insert(spans, { idx - 1, id_e, "SuperMarkdownMermaidType" })
+        elseif next_ch == "(" then
+          table.insert(spans, { idx - 1, id_e, "SuperMarkdownH1" })
+        end
+        idx = id_e + 1
+      else
+        idx = idx + 1
+      end
+    elseif ch:match("[=%+%-%*/<>!&|:]") then
+      local _, op_e = line:find("^[=%+%-%*/<>!&|:]+", idx)
+      if op_e then
+        table.insert(spans, { idx - 1, math.min(op_e, code_end), "SuperMarkdownMermaidArrow" })
+        idx = op_e + 1
+      else
+        idx = idx + 1
+      end
+    else
+      idx = idx + 1
+    end
+  end
+
+  if c_start then
+    table.insert(spans, { c_start - 1, n, "SuperMarkdownMermaidComment" })
+  end
+
+  return spans
+end
+
+--- Highlights a multi-line code block using Treesitter if available, falling back to lexical tokens.
+--- Returns a table mapping 1-indexed line number -> list of `{ start_col, end_col, hl_group }` (0-indexed relative to code line).
+local function highlight_code_block(code_lines, lang)
+  local line_spans = {}
+  for idx = 1, #code_lines do
+    line_spans[idx] = {}
+  end
+  if #code_lines == 0 then
+    return line_spans
+  end
+
+  local ts_lang = TS_LANG_ALIASES[lang] or lang
+  local used_ts = false
+
+  if ts_lang and ts_lang ~= "" then
+    local code_str = table.concat(code_lines, "\n")
+    local ok_p, parser = pcall(vim.treesitter.get_string_parser, code_str, ts_lang)
+    if ok_p and parser then
+      local ok_t, trees = pcall(function() return parser:parse() end)
+      local ok_q, query = pcall(vim.treesitter.query.get, ts_lang, "highlights")
+      if ok_t and trees and trees[1] and ok_q and query then
+        local root = trees[1]:root()
+        for id, node in query:iter_captures(root, code_str, 0, -1) do
+          local cap = query.captures[id]
+          if cap and cap ~= "spell" and cap ~= "nospell" then
+            local hl = resolve_capture_hl(cap, ts_lang)
+            if hl then
+              local sr, sc, er, ec = node:range()
+              for r = sr, er do
+                local l_idx = r + 1
+                if line_spans[l_idx] then
+                  local line_len = #code_lines[l_idx]
+                  local s_c = (r == sr) and sc or 0
+                  local e_c = (r == er) and ec or line_len
+                  if e_c > s_c then
+                    table.insert(line_spans[l_idx], { s_c, math.min(line_len, e_c), hl })
+                    used_ts = true
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  if not used_ts then
+    for idx, c_line in ipairs(code_lines) do
+      line_spans[idx] = highlight_code_line_lexical(c_line, ts_lang)
+    end
+  end
+
+  return line_spans
+end
+
+--- Highlights a rendered ASCII Mermaid diagram line (`"  │ " .. d_line`) with distinct box, arrow, label & header colors
+local function highlight_mermaid_diagram_line(padded_d)
+  local spans = {
+    { 0, 6, "SuperMarkdownCodeBorder" },
+  }
+  local len = #padded_d
+  local i = 7
+  while i <= len do
+    -- Box drawing borders: ┌ ─ ┬ ┐ │ ├ ┼ ┤ └ ┴ ┘ ╭ ╮ ╰ ╯ ╔ ═ ╗ ║ ╚ ╝
+    local b3 = padded_d:sub(i, i + 2)
+    if
+      b3 == "┌" or b3 == "─" or b3 == "┬" or b3 == "┐"
+      or b3 == "│" or b3 == "├" or b3 == "┼" or b3 == "┤"
+      or b3 == "└" or b3 == "┴" or b3 == "┘"
+      or b3 == "╭" or b3 == "╮" or b3 == "╰" or b3 == "╯"
+      or b3 == "╔" or b3 == "═" or b3 == "╗" or b3 == "║" or b3 == "╚" or b3 == "╝"
+      or b3 == "┼"
+    then
+      table.insert(spans, { i - 1, i + 2, "SuperMarkdownMermaidType" })
+      i = i + 3
+    elseif b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼" or b3 == "●" or b3 == "○" then
+      table.insert(spans, { i - 1, i + 2, "SuperMarkdownMermaidArrow" })
+      i = i + 3
+    else
+      local ch = padded_d:sub(i, i)
+      if ch == "[" then
+        local c_e = padded_d:find("%]", i + 1)
+        if c_e then
+          table.insert(spans, { i - 1, c_e, "SuperMarkdownMermaidEdgeLabel" })
+          i = c_e + 1
+        else
+          i = i + 1
+        end
+      elseif ch == ":" then
+        table.insert(spans, { i - 1, i, "SuperMarkdownMermaidArrow" })
+        i = i + 1
+      elseif ch ~= " " then
+        local s_e = i
+        while s_e <= len do
+          local nb3 = padded_d:sub(s_e, s_e + 2)
+          local nch = padded_d:sub(s_e, s_e)
+          if
+            nb3 == "┌" or nb3 == "─" or nb3 == "┬" or nb3 == "┐"
+            or nb3 == "│" or nb3 == "├" or nb3 == "┼" or nb3 == "┤"
+            or nb3 == "└" or nb3 == "┴" or nb3 == "┘"
+            or nb3 == "╭" or nb3 == "╮" or nb3 == "╰" or nb3 == "╯"
+            or nb3 == "╔" or nb3 == "═" or nb3 == "╗" or nb3 == "║" or nb3 == "╚" or nb3 == "╝"
+            or nb3 == "▶" or nb3 == "◀" or nb3 == "▲" or nb3 == "▼"
+            or nch == "["
+          then
+            break
+          end
+          s_e = s_e + 1
+        end
+        table.insert(spans, { i - 1, s_e - 1, "SuperMarkdownMermaidNodeLabel" })
+        i = s_e
+      else
+        i = i + 1
+      end
+    end
+  end
+  return spans
 end
 
 --- Renders a contiguous Markdown table block into pure Unicode box-drawn lines with inline spans
@@ -431,10 +763,7 @@ function M.compile_document(bufnr, win_width)
           local padded_d = "  │ " .. d_line
           push_line(padded_d, mapped_src, {
             line_hl = "SuperMarkdownCodeBlock",
-            spans = {
-              { 0, #padded_d, "SuperMarkdownMermaidNodeLabel" },
-              { 0, 5, "SuperMarkdownCodeBorder" },
-            },
+            spans = highlight_mermaid_diagram_line(padded_d),
           })
         end
 
@@ -453,7 +782,7 @@ function M.compile_document(bufnr, win_width)
         end
         s2p[block_end] = #out_lines
       else
-        -- Render styled Code Block without raw ``` fences
+        -- Render styled Code Block without raw ``` fences, with full syntax highlighting
         local cb_opts = r_opts.codeblocks or {}
         local badge = (cb_opts.language_icons and cb_opts.language_icons[lang_clean])
           or (lang_clean ~= "" and ("󰅩 " .. lang_clean) or "󰅩 code")
@@ -468,12 +797,19 @@ function M.compile_document(bufnr, win_width)
           },
         })
 
+        local code_hl_map = highlight_code_block(code_lines, lang_clean)
+        local code_prefix = "  │ "
+        local prefix_bytes = #code_prefix
         for c_idx, c_line in ipairs(code_lines) do
           local src_l = block_start + c_idx
-          local disp = "  │ " .. c_line
+          local disp = code_prefix .. c_line
+          local line_spans = { { 0, prefix_bytes, "SuperMarkdownCodeBorder" } }
+          for _, sp in ipairs(code_hl_map[c_idx] or {}) do
+            table.insert(line_spans, { prefix_bytes + sp[1], prefix_bytes + sp[2], sp[3] })
+          end
           push_line(disp, src_l, {
             line_hl = "SuperMarkdownCodeBlock",
-            spans = { { 0, 6, "SuperMarkdownCodeBorder" } },
+            spans = line_spans,
           })
         end
 
@@ -686,6 +1022,8 @@ function M.refresh()
     return
   end
 
+  highlights.setup()
+
   local win_w = vim.api.nvim_win_get_width(preview_win)
   local out_lines, out_meta, s2p, p2s = M.compile_document(source_buf, win_w)
   source_to_preview = s2p
@@ -709,11 +1047,11 @@ function M.refresh()
       })
     end
     if meta.spans then
-      for _, sp in ipairs(meta.spans) do
+      for s_idx, sp in ipairs(meta.spans) do
         pcall(vim.api.nvim_buf_set_extmark, preview_buf, NS_ID, lnum, sp[1], {
           end_col = sp[2],
           hl_group = sp[3],
-          priority = 100,
+          priority = 90 + math.min(100, s_idx),
         })
       end
     end

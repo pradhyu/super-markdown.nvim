@@ -495,6 +495,12 @@ vim.api.nvim_buf_set_lines(pp_src_buf, 0, -1, false, {
   "    Edit[Editor Buffer] --> Preview[Read-Only Preview Pane]",
   "```",
   "",
+  "```lua",
+  "local function greet(name)",
+  "  return 'Hello ' .. name -- greeting",
+  "end",
+  "```",
+  "",
   "- [x] Completed task",
   "- [ ] Pending task",
 })
@@ -519,10 +525,24 @@ assert_eq(joined:find("┌") ~= nil and joined:find("┘") ~= nil, true, "Table 
 assert_eq(joined:find("%[open|close%]") ~= nil, true, "Escaped pipe unescaped cleanly in preview pane")
 
 -- Test live sync on edit & cursor move (editor -> preview)
-vim.api.nvim_win_set_cursor(editor_win, { 15, 0 })
+local total_src_lines = vim.api.nvim_buf_line_count(pp_src_buf)
+vim.api.nvim_win_set_cursor(editor_win, { total_src_lines, 0 })
 preview_pane.sync_scroll()
 local p_cursor = vim.api.nvim_win_get_cursor(p_win)[1]
 assert_eq(p_cursor > 10, true, "Preview pane scrolled in sync with source cursor")
+
+-- Verify code block syntax highlighting extmarks in preview buffer
+local p_extmarks = vim.api.nvim_buf_get_extmarks(p_buf, -1, 0, -1, { details = true })
+local has_kw_hl = false
+local has_str_hl = false
+local has_cmt_hl = false
+for _, em in ipairs(p_extmarks) do
+  local hl = em[4] and em[4].hl_group
+  if hl == "SuperMarkdownMermaidKeyword" then has_kw_hl = true end
+  if hl == "SuperMarkdownMermaidString" then has_str_hl = true end
+  if hl == "SuperMarkdownMermaidComment" then has_cmt_hl = true end
+end
+assert_eq(has_kw_hl and has_str_hl and has_cmt_hl, true, "Code block syntax highlighting (keywords, strings, comments) applied in preview pane")
 
 -- Test reverse sync (preview -> editor)
 vim.api.nvim_set_current_win(p_win)
@@ -541,7 +561,7 @@ preview_pane.set_sync("both")
 vim.api.nvim_win_set_cursor(p_win, { #p_lines, 0 })
 vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<CR>", true, false, true), "x", false)
 assert_eq(vim.api.nvim_get_current_win(), editor_win, "Pressing <CR> in preview pane focuses editable source buffer")
-assert_eq(vim.api.nvim_win_get_cursor(editor_win)[1], 15, "Pressing <CR> in preview pane jumps to matching source line")
+assert_eq(vim.api.nvim_win_get_cursor(editor_win)[1], total_src_lines, "Pressing <CR> in preview pane jumps to matching source line")
 
 -- Test <2-LeftMouse> mapping exists on preview buffer and jumps to editable buffer
 local has_dblclick = false
