@@ -736,19 +736,32 @@ function M.compile_document(bufnr, win_width)
 
       if lang_clean == "mermaid" or lang_clean == "mmd" then
         -- Render Mermaid diagram directly in the preview buffer (hiding raw code!)
+        -- Include window width in cache key so resizing re-renders diagram layout to fit
         local code = table.concat(code_lines, "\n")
-        local hash = vim.fn.sha256(code)
+        local inner_max_w = math.max(28, win_width - 8)
+        local hash = vim.fn.sha256(code .. ":" .. tostring(inner_max_w))
         local diagram_lines = mermaid_cache[hash]
         if not diagram_lines then
-          diagram_lines = ascii.render(code)
+          diagram_lines = ascii.render(code, { max_width = inner_max_w, bare = true })
           mermaid_cache[hash] = diagram_lines
         end
 
-        local header_str = "  ╭─ 󰡷 Mermaid Diagram (Live Preview) " .. string.rep("─", math.max(6, win_width - 42)) .. "╮"
+        local diag_w = 38
+        for _, dl in ipairs(diagram_lines) do
+          local w = vim.fn.strdisplaywidth(dl)
+          if w > diag_w then
+            diag_w = w
+          end
+        end
+        local box_inner_w = math.max(diag_w + 2, math.min(inner_max_w, math.max(44, win_width - 8)))
+        local title_badge = "󰡷 Mermaid Diagram (Live Preview)"
+        local title_w = vim.fn.strdisplaywidth(title_badge)
+        local top_dashes = string.rep("─", math.max(2, box_inner_w - title_w - 3))
+        local header_str = "  ╭─ " .. title_badge .. " " .. top_dashes .. "╮"
         push_line(header_str, block_start, {
           spans = {
             { 0, #header_str, "SuperMarkdownCodeBorder" },
-            { 7, 41, "SuperMarkdownMermaidReady" },
+            { 7, 7 + #title_badge, "SuperMarkdownMermaidReady" },
           },
         })
         local p_block_start = #out_lines
@@ -757,14 +770,18 @@ function M.compile_document(bufnr, win_width)
           local ratio = (#diagram_lines > 1) and ((d_idx - 1) / (#diagram_lines - 1)) or 0
           local mapped_src = block_start + math.floor(ratio * math.max(0, block_end - block_start) + 0.5)
           mapped_src = math.min(block_end, math.max(block_start, mapped_src))
-          local padded_d = "  │ " .. d_line
+          local dl_w = vim.fn.strdisplaywidth(d_line)
+          local r_pad = string.rep(" ", math.max(1, box_inner_w - dl_w - 1))
+          local padded_d = "  │ " .. d_line .. r_pad .. "│"
+          local d_spans = highlight_mermaid_diagram_line(padded_d)
+          table.insert(d_spans, { #padded_d - 3, #padded_d, "SuperMarkdownCodeBorder" })
           push_line(padded_d, mapped_src, {
             line_hl = "SuperMarkdownCodeBlock",
-            spans = highlight_mermaid_diagram_line(padded_d),
+            spans = d_spans,
           })
         end
 
-        local footer_str = "  ╰" .. string.rep("─", math.max(10, win_width - 8)) .. "╯"
+        local footer_str = "  ╰" .. string.rep("─", box_inner_w) .. "╯"
         push_line(footer_str, block_end, {
           spans = { { 0, #footer_str, "SuperMarkdownCodeBorder" } },
         })
@@ -1415,9 +1432,10 @@ function M.open(opts)
   pcall(vim.api.nvim_set_option_value, "relativenumber", false, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "signcolumn", "no", { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "foldcolumn", "0", { win = preview_win })
+  pcall(vim.api.nvim_set_option_value, "statuscolumn", "", { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "foldenable", false, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "foldmethod", "manual", { win = preview_win })
-  pcall(vim.api.nvim_set_option_value, "wrap", p_opts.wrap ~= false, { win = preview_win })
+  pcall(vim.api.nvim_set_option_value, "wrap", p_opts.wrap == true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "linebreak", true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "conceallevel", 2, { win = preview_win })
@@ -1447,6 +1465,11 @@ function M.open(opts)
     bmap("n", "Q", M.close, "Close Live Preview Pane")
     bmap("n", "<Esc>", M.close, "Close Live Preview Pane")
     bmap("n", "r", M.refresh, "Refresh Live Preview Pane")
+    bmap("n", "m", "<Nop>", "Disable accidental mark creation in Preview Pane")
+    local toggle_lhs = config.options and config.options.keymaps and config.options.keymaps.preview_pane
+    if toggle_lhs and toggle_lhs ~= "" then
+      bmap("n", toggle_lhs, M.toggle, "Toggle Live Preview Pane")
+    end
     bmap("n", "s", function()
       M.set_sync("cycle")
     end, "Cycle Scroll Sync Mode (Both / Source→Preview / Preview→Source / Off)")
@@ -1542,7 +1565,7 @@ function M.open(opts)
       end
     end,
   })
-  vim.api.nvim_create_autocmd("VimResized", {
+  vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
     group = augroup_id,
     callback = function()
       M.debounced_refresh()

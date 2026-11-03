@@ -56,9 +56,27 @@ local function parse_node(str)
   return nil
 end
 
+local function truncate_str(s, max_w)
+  if str_width(s) <= max_w then return s end
+  if max_w <= 1 then return "…" end
+  local out = ""
+  local chars = vim.fn.strchars(s)
+  for idx = 0, chars - 1 do
+    local ch = vim.fn.strcharpart(s, idx, 1)
+    if str_width(out .. ch) + 1 > max_w then
+      break
+    end
+    out = out .. ch
+  end
+  return out .. "…"
+end
+
 --- Render a single node box
-local function make_box(id, shape, text)
+local function make_box(id, shape, text, max_box_w)
   local label = (text and text ~= "") and text or id
+  if max_box_w and max_box_w > 6 then
+    label = truncate_str(label, max_box_w - 4)
+  end
   local w = str_width(label) + 2
   local top, mid, bot
 
@@ -67,21 +85,21 @@ local function make_box(id, shape, text)
     mid = "│ " .. label .. " │"
     bot = "[(" .. string.rep("─", w) .. ")]"
   elseif shape == "decision" then
-    top = "◇─" .. string.rep("─", w - 2) .. "─◇"
+    top = "◇─" .. string.rep("─", math.max(0, w - 2)) .. "─◇"
     mid = "│ " .. label .. " │"
-    bot = "◇─" .. string.rep("─", w - 2) .. "─◇"
+    bot = "◇─" .. string.rep("─", math.max(0, w - 2)) .. "─◇"
   elseif shape == "rounded" or shape == "stadium" then
-    top = "╭─" .. string.rep("─", w - 2) .. "─╮"
+    top = "╭─" .. string.rep("─", math.max(0, w - 2)) .. "─╮"
     mid = "│ " .. label .. " │"
-    bot = "╰─" .. string.rep("─", w - 2) .. "─╯"
+    bot = "╰─" .. string.rep("─", math.max(0, w - 2)) .. "─╯"
   elseif shape == "circle" then
     top = "(( " .. label .. " ))"
     mid = nil
     bot = nil
   else
-    top = "┌─" .. string.rep("─", w - 2) .. "─┐"
+    top = "┌─" .. string.rep("─", math.max(0, w - 2)) .. "─┐"
     mid = "│ " .. label .. " │"
-    bot = "└─" .. string.rep("─", w - 2) .. "─┘"
+    bot = "└─" .. string.rep("─", math.max(0, w - 2)) .. "─┘"
   end
 
   return {
@@ -94,13 +112,20 @@ local function make_box(id, shape, text)
 end
 
 --- Frame lines inside a nice Unicode border card
-local function frame_diagram(lines, title)
+local function frame_diagram(lines, title, opts)
+  opts = opts or {}
+  if opts.bare then
+    return lines
+  end
   local max_w = str_width(title) + 6
   for _, l in ipairs(lines) do
     local w = str_width(l)
     if w > max_w then max_w = w end
   end
-  max_w = math.max(max_w + 4, 52)
+  max_w = math.max(max_w + 4, 44)
+  if opts.max_width and opts.max_width > 20 then
+    max_w = math.max(max_w, math.min(opts.max_width - 4, max_w))
+  end
 
   local header_bar = "┌─ " .. title .. " " .. string.rep("─", math.max(0, max_w - str_width(title) - 4)) .. "┐"
   local footer_bar = "└" .. string.rep("─", max_w) .. "┘"
@@ -124,7 +149,9 @@ end
 -- =========================================================================
 -- 1. SEQUENCE DIAGRAM RENDERER
 -- =========================================================================
-local function render_sequence(code)
+local function render_sequence(code, opts)
+  opts = opts or {}
+  local max_width = opts.max_width
   local lines = vim.split(code, "\n")
   local participants = {}
   local p_lookup = {}
@@ -175,150 +202,172 @@ local function render_sequence(code)
   end
 
   if #participants == 0 then
-    return frame_diagram({ "(Empty sequence diagram)" }, "󰡷 Mermaid Sequence Diagram")
+    return frame_diagram({ "(Empty sequence diagram)" }, "󰡷 Mermaid Sequence Diagram", opts)
   end
 
-  -- Compute column widths
+  local n_p = #participants
+  local gap_w = 5
   local col_widths = {}
+  local disp_names = {}
   for i, p in ipairs(participants) do
-    local w = math.max(str_width(p.name) + 4, 16)
-    col_widths[i] = w
+    col_widths[i] = math.max(str_width(p.name) + 4, 14)
+    disp_names[i] = p.name
   end
 
-  -- Build participant boxes
+  -- Ensure adjacent columns have enough span for message labels, while respecting max_width on resize
+  for _, m in ipairs(messages) do
+    if not m.note then
+      local f_i = p_lookup[m.from]
+      local t_i = p_lookup[m.to]
+      if f_i and t_i and f_i ~= t_i and math.abs(t_i - f_i) == 1 then
+        local min_i = math.min(f_i, t_i)
+        local lbl_w = str_width((m.step and (m.step .. ". ") or "") .. m.text) + 4
+        local cur_span = math.floor(col_widths[min_i] / 2) + gap_w + math.floor(col_widths[min_i + 1] / 2)
+        if lbl_w > cur_span then
+          local extra = math.min(12, lbl_w - cur_span)
+          col_widths[min_i] = col_widths[min_i] + math.ceil(extra / 2)
+          col_widths[min_i + 1] = col_widths[min_i + 1] + math.floor(extra / 2)
+        end
+      end
+    end
+  end
+
+  if max_width and max_width > 24 then
+    local total_w = (n_p - 1) * gap_w
+    for i = 1, n_p do
+      total_w = total_w + col_widths[i]
+    end
+    if total_w > max_width then
+      gap_w = math.max(2, math.min(gap_w, math.floor((max_width - n_p * 10) / math.max(1, n_p - 1))))
+      local avail_boxes = math.max(n_p * 8, max_width - (n_p - 1) * gap_w)
+      local base_w = math.max(8, math.floor(avail_boxes / n_p))
+      for i, p in ipairs(participants) do
+        col_widths[i] = math.min(col_widths[i], base_w)
+        disp_names[i] = truncate_str(p.name, math.max(4, col_widths[i] - 2))
+      end
+    end
+  end
+
+  local col_gap = string.rep(" ", gap_w)
+
+  -- Compute exact character column center for each participant's lifeline
+  local centers = {}
+  local offset = 0
+  for i = 1, n_p do
+    local half = math.floor(col_widths[i] / 2)
+    centers[i] = offset + half -- 0-indexed display column of lifeline
+    offset = offset + col_widths[i] + ((i < n_p) and gap_w or 0)
+  end
+  local total_grid_w = offset
+
+  -- Helper to render a line on the exact lifeline grid with optional text or arrow overlay
+  local function render_grid_row(overlay_col, overlay_str)
+    local cells = {}
+    for c = 0, total_grid_w - 1 do
+      cells[c] = " "
+    end
+    for i = 1, n_p do
+      cells[centers[i]] = "│"
+    end
+    if overlay_col and overlay_str then
+      local n_chars = vim.fn.strchars(overlay_str)
+      local c = overlay_col
+      for idx = 0, n_chars - 1 do
+        local ch = vim.fn.strcharpart(overlay_str, idx, 1)
+        local cw = math.max(1, str_width(ch))
+        if c >= 0 then
+          cells[c] = ch
+          for k = 1, cw - 1 do
+            cells[c + k] = ""
+          end
+        end
+        c = c + cw
+      end
+    end
+    local max_c = total_grid_w - 1
+    if overlay_col and overlay_str then
+      max_c = math.max(max_c, overlay_col + str_width(overlay_str) - 1)
+    end
+    local row_out = {}
+    for c = 0, max_c do
+      if cells[c] and cells[c] ~= "" then
+        table.insert(row_out, cells[c])
+      end
+    end
+    return (table.concat(row_out):gsub("%s+$", ""))
+  end
+
+  -- Build participant header/footer boxes
   local h_top_parts = {}
   local h_mid_parts = {}
   local h_bot_parts = {}
 
-  for i, p in ipairs(participants) do
+  for i = 1, n_p do
     local w = col_widths[i]
     table.insert(h_top_parts, "┌" .. string.rep("─", w - 2) .. "┐")
-    table.insert(h_mid_parts, "│" .. pad_str(p.name, w - 2, "center") .. "│")
+    table.insert(h_mid_parts, "│" .. pad_str(disp_names[i], w - 2, "center") .. "│")
     table.insert(h_bot_parts, "└" .. string.rep("─", w - 2) .. "┘")
   end
 
-  local col_gap = "     "
   local h_top = table.concat(h_top_parts, col_gap)
   local h_mid = table.concat(h_mid_parts, col_gap)
   local h_bot = table.concat(h_bot_parts, col_gap)
-
-  local function make_lifeline()
-    local parts = {}
-    for i, w in ipairs(col_widths) do
-      local half = math.floor(w / 2)
-      local rest = w - half - 1
-      table.insert(parts, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-    end
-    return table.concat(parts, col_gap)
-  end
 
   local out = {}
   table.insert(out, h_top)
   table.insert(out, h_mid)
   table.insert(out, h_bot)
-  table.insert(out, make_lifeline())
+  table.insert(out, render_grid_row())
 
   for _, m in ipairs(messages) do
     if m.note then
-      table.insert(out, "  " .. m.note)
-      table.insert(out, make_lifeline())
+      local note_str = "[ " .. m.note .. " ]"
+      if max_width and max_width > 12 then
+        note_str = truncate_str(note_str, max_width - 4)
+      end
+      table.insert(out, render_grid_row(math.max(0, centers[1] - 1), note_str))
+      table.insert(out, render_grid_row())
     else
       local from_idx = p_lookup[m.from]
       local to_idx = p_lookup[m.to]
       local label = (m.step and (m.step .. ". ") or "") .. m.text
 
       if from_idx == to_idx then
-        -- Self call
-        local parts = {}
-        for i, w in ipairs(col_widths) do
-          local half = math.floor(w / 2)
-          local rest = w - half - 1
-          if i == from_idx then
-            table.insert(parts, string.rep(" ", half) .. "│ ──╮" .. string.rep(" ", math.max(0, rest - 4)))
-          else
-            table.insert(parts, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-          end
+        local c_pos = centers[from_idx]
+        local avail_lbl
+        if from_idx < n_p then
+          avail_lbl = math.max(6, centers[from_idx + 1] - c_pos - 6)
+        else
+          avail_lbl = max_width and math.max(8, max_width - c_pos - 6) or 36
         end
-        table.insert(out, table.concat(parts, col_gap))
-
-        local parts_text = {}
-        for i, w in ipairs(col_widths) do
-          local half = math.floor(w / 2)
-          local rest = w - half - 1
-          if i == from_idx then
-            table.insert(parts_text, string.rep(" ", half) .. "│ " .. label .. string.rep(" ", rest))
-          else
-            table.insert(parts_text, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-          end
-        end
-        table.insert(out, table.concat(parts_text, col_gap))
-
-        local parts_ret = {}
-        for i, w in ipairs(col_widths) do
-          local half = math.floor(w / 2)
-          local rest = w - half - 1
-          if i == from_idx then
-            table.insert(parts_ret, string.rep(" ", half) .. "│ ◀─╯" .. string.rep(" ", math.max(0, rest - 4)))
-          else
-            table.insert(parts_ret, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-          end
-        end
-        table.insert(out, table.concat(parts_ret, col_gap))
+        local clean_lbl = truncate_str(label, avail_lbl)
+        table.insert(out, render_grid_row(c_pos, "├──╮ " .. clean_lbl))
+        table.insert(out, render_grid_row(c_pos, "│◀─╯"))
       else
         local min_idx = math.min(from_idx, to_idx)
         local max_idx = math.max(from_idx, to_idx)
         local ltr = (from_idx < to_idx)
+        local c_left = centers[min_idx]
+        local c_right = centers[max_idx]
+        local span_w = math.max(3, c_right - c_left - 1)
 
-        -- Text label line above arrow
-        local parts_lbl = {}
-        for i, w in ipairs(col_widths) do
-          local half = math.floor(w / 2)
-          local rest = w - half - 1
-          if i == min_idx then
-            table.insert(parts_lbl, string.rep(" ", half) .. "│ " .. label)
-          elseif i > min_idx and i <= max_idx then
-            table.insert(parts_lbl, "")
-          else
-            table.insert(parts_lbl, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-          end
-        end
-        table.insert(out, table.concat(parts_lbl, col_gap))
+        local clean_lbl = truncate_str(label, math.max(6, span_w - 2))
+        local lbl_col = c_left + 1 + math.max(0, math.floor((span_w - str_width(clean_lbl)) / 2))
+        table.insert(out, render_grid_row(lbl_col, clean_lbl))
 
-        -- Arrow line with precise gap filling
-        local parts_arr = {}
-        for i, w in ipairs(col_widths) do
-          local half = math.floor(w / 2)
-          local rest = w - half - 1
-          if i < min_idx or i > max_idx then
-            table.insert(parts_arr, string.rep(" ", half) .. "│" .. string.rep(" ", rest))
-          elseif i == min_idx then
-            local pre = string.rep(" ", half) .. (ltr and "│" or "◀")
-            local post = string.rep("─", rest)
-            table.insert(parts_arr, pre .. post)
-          elseif i == max_idx then
-            local pre = string.rep("─", half) .. (ltr and "▶" or "│")
-            local post = string.rep(" ", rest)
-            table.insert(parts_arr, pre .. post)
-          else
-            table.insert(parts_arr, string.rep("─", w))
-          end
+        local is_dashed = m.arrow:find("%-%.") ~= nil or m.arrow:find("%-%-") ~= nil
+        local dash_unit = is_dashed and "╌" or "─"
+        local shaft = string.rep(dash_unit, math.max(1, span_w - 1))
+        local arr_overlay
+        if ltr then
+          arr_overlay = "├" .. shaft .. "▶│"
+        else
+          arr_overlay = "│◀" .. shaft .. "┤"
         end
-
-        local arr_str = ""
-        for i, p in ipairs(parts_arr) do
-          arr_str = arr_str .. p
-          if i < #parts_arr then
-            if i >= min_idx and i < max_idx then
-              arr_str = arr_str .. string.rep("─", #col_gap)
-            else
-              arr_str = arr_str .. string.rep(" ", #col_gap)
-            end
-          end
-        end
-        table.insert(out, arr_str)
+        table.insert(out, render_grid_row(c_left, arr_overlay))
       end
 
-      table.insert(out, make_lifeline())
+      table.insert(out, render_grid_row())
     end
   end
 
@@ -326,13 +375,15 @@ local function render_sequence(code)
   table.insert(out, h_mid)
   table.insert(out, h_bot)
 
-  return frame_diagram(out, "󰡷 Mermaid Sequence Diagram (Live)")
+  return frame_diagram(out, "󰡷 Mermaid Sequence Diagram (Live)", opts)
 end
 
 -- =========================================================================
 -- 2. STATE DIAGRAM RENDERER
 -- =========================================================================
-local function render_state(code)
+local function render_state(code, opts)
+  opts = opts or {}
+  local max_box_w = opts.max_width and math.max(16, opts.max_width - 8) or nil
   local raw_lines = vim.split(code, "\n")
   local states = {}
   local state_order = {}
@@ -360,28 +411,34 @@ local function render_state(code)
   local out = {}
   table.insert(out, "  ● [Start]")
 
-  local visited = {}
   for _, t in ipairs(transitions) do
-    local lbl = (t.event ~= "") and ("  [" .. t.event .. "]") or ""
+    local ev_txt = t.event or ""
+    if max_box_w and ev_txt ~= "" then
+      ev_txt = truncate_str(ev_txt, math.max(8, max_box_w - 10))
+    end
+    local lbl = (ev_txt ~= "") and ("  [" .. ev_txt .. "]") or ""
     table.insert(out, "      │" .. lbl)
     table.insert(out, "      ▼")
     if t.to == "[*]" then
       table.insert(out, "    ◉ [End]")
     else
-      local s_box = make_box(t.to, "rounded", t.to)
+      local s_box = make_box(t.to, "rounded", t.to, max_box_w)
       table.insert(out, "  " .. s_box.top)
       table.insert(out, "  " .. s_box.mid)
       table.insert(out, "  " .. s_box.bot)
     end
   end
 
-  return frame_diagram(out, "󰡷 Mermaid State Machine (Live)")
+  return frame_diagram(out, "󰡷 Mermaid State Machine (Live)", opts)
 end
 
 -- =========================================================================
 -- 3. FLOWCHART / GRAPH RENDERER
 -- =========================================================================
-local function render_flowchart(code)
+local function render_flowchart(code, opts)
+  opts = opts or {}
+  local max_width = opts.max_width
+  local max_box_w = max_width and math.max(18, max_width - 8) or nil
   local raw_lines = vim.split(code, "\n")
   local nodes = {}
   local edges = {}
@@ -453,12 +510,12 @@ local function render_flowchart(code)
   end
 
   if #node_order == 0 then
-    return frame_diagram({ "(Empty or unsupported Mermaid flowchart)" }, "󰡷 Mermaid Flowchart")
+    return frame_diagram({ "(Empty or unsupported Mermaid flowchart)" }, "󰡷 Mermaid Flowchart", opts)
   end
 
   local boxes = {}
   for id, info in pairs(nodes) do
-    boxes[id] = make_box(id, info.shape, info.label)
+    boxes[id] = make_box(id, info.shape, info.label, max_box_w)
   end
 
   local out = {}
@@ -477,7 +534,11 @@ local function render_flowchart(code)
   local function draw_subgraph(u, indent)
     indent = indent or ""
     if visited[u] then
-      table.insert(out, indent .. "└─ ⟲ (loops to [" .. (nodes[u] and nodes[u].label or u) .. "])")
+      local loop_lbl = nodes[u] and nodes[u].label or u
+      if max_box_w then
+        loop_lbl = truncate_str(loop_lbl, math.max(8, max_box_w - 18))
+      end
+      table.insert(out, indent .. "└─ ⟲ (loops to [" .. loop_lbl .. "])")
       return
     end
     visited[u] = true
@@ -492,7 +553,11 @@ local function render_flowchart(code)
       return
     elseif #children == 1 then
       local child = children[1]
-      local lbl = (child.label and child.label ~= "") and ("  [" .. child.label .. "]") or ""
+      local c_lbl = child.label or ""
+      if max_box_w and c_lbl ~= "" then
+        c_lbl = truncate_str(c_lbl, math.max(8, max_box_w - 12))
+      end
+      local lbl = (c_lbl ~= "") and ("  [" .. c_lbl .. "]") or ""
       table.insert(out, indent .. "      │" .. lbl)
       table.insert(out, indent .. "      ▼")
       draw_subgraph(child.to, indent)
@@ -500,8 +565,14 @@ local function render_flowchart(code)
       for i, child in ipairs(children) do
         local is_last = (i == #children)
         local branch_char = is_last and "└" or "├"
-        local lbl = (child.label and child.label ~= "") and (" [" .. child.label .. "] ──▶ ") or " ──▶ "
-        table.insert(out, indent .. "      " .. branch_char .. "──────" .. lbl .. "[" .. (nodes[child.to] and nodes[child.to].label or child.to) .. "]")
+        local c_lbl = child.label or ""
+        local target_lbl = nodes[child.to] and nodes[child.to].label or child.to
+        if max_box_w then
+          c_lbl = truncate_str(c_lbl, math.max(6, math.floor(max_box_w / 3)))
+          target_lbl = truncate_str(target_lbl, math.max(8, math.floor(max_box_w / 2)))
+        end
+        local lbl = (c_lbl ~= "") and (" [" .. c_lbl .. "] ──▶ ") or " ──▶ "
+        table.insert(out, indent .. "      " .. branch_char .. "────" .. lbl .. "[" .. target_lbl .. "]")
       end
       -- Continue traversing down each child
       for _, child in ipairs(children) do
@@ -531,20 +602,20 @@ local function render_flowchart(code)
   end
 
   local title = is_lr and "󰡷 Mermaid Flowchart (LR - Live)" or "󰡷 Mermaid Flowchart (TD - Live)"
-  return frame_diagram(out, title)
+  return frame_diagram(out, title, opts)
 end
 
 -- =========================================================================
 -- MAIN RENDER DISPATCHER
 -- =========================================================================
-function M.render(mermaid_code)
+function M.render(mermaid_code, opts)
   local trimmed = vim.trim(mermaid_code)
   if trimmed:match("^sequenceDiagram") then
-    return render_sequence(trimmed)
+    return render_sequence(trimmed, opts)
   elseif trimmed:match("^stateDiagram") then
-    return render_state(trimmed)
+    return render_state(trimmed, opts)
   else
-    return render_flowchart(trimmed)
+    return render_flowchart(trimmed, opts)
   end
 end
 
