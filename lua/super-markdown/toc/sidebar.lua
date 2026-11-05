@@ -242,6 +242,7 @@ function M.open()
     set_keymap("q", M.close)
     set_keymap("Q", M.close)
     set_keymap("<Esc>", M.close)
+    set_keymap("<leader>ms", M.close)
     set_keymap("<CR>", function() M.jump_to_heading(true) end)
     set_keymap("o", function() M.jump_to_heading(true) end)
 

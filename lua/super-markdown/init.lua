@@ -112,7 +112,7 @@ function M.setup_buffer_keymaps(bufnr)
   local km = config.options.keymaps
   local function bmap(mode, lhs, rhs, desc)
     if lhs and lhs ~= "" then
-      vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, silent = true, desc = "SuperMarkdown: " .. desc })
+      vim.keymap.set(mode, lhs, rhs, { buffer = bufnr, nowait = true, silent = true, desc = "SuperMarkdown: " .. desc })
     end
   end
 
