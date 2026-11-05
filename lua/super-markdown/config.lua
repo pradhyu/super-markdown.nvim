@@ -91,6 +91,7 @@ M.defaults = {
       language_icons = {
         lua = "󰢱 lua",
         python = "󰌠 python",
+        java = " java",
         javascript = "󰌞 javascript",
         typescript = "󰛦 typescript",
         html = "󰌝 html",
