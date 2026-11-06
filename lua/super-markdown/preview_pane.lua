@@ -1517,15 +1517,18 @@ function M.toggle_editor()
   end
 end
 
---- Enter Reader Mode: open Live Preview, hide Editor split, and open TOC Sidebar
-function M.reader_mode()
+--- Enter Reader Mode: open Live Preview, hide Editor split, and open TOC Sidebar (on 'left' or 'right')
+function M.reader_mode(pos)
   if not M.is_open() then
     M.open({ focus_preview = true })
   end
   M.hide_editor()
   local sb = require("super-markdown.toc.sidebar")
+  local target_pos = (pos == "left" or pos == "right") and pos or nil
   if not sb.is_open() then
-    sb.open({ focus_sidebar = false })
+    sb.open({ position = target_pos, focus_sidebar = false })
+  elseif target_pos and sb.get_position() ~= target_pos then
+    sb.set_position(target_pos)
   else
     sb.refresh()
   end
@@ -1698,6 +1701,14 @@ function M.open(opts)
     bmap("n", "t", function()
       require("super-markdown.toc.sidebar").toggle()
     end, "Toggle Table of Contents Sidebar")
+    bmap("n", "S", function()
+      local sb = require("super-markdown.toc.sidebar")
+      if not sb.is_open() then
+        sb.open()
+      else
+        sb.set_position("toggle")
+      end
+    end, "Flip TOC Sidebar Position (Left ↔ Right)")
     if km.toc_sidebar and km.toc_sidebar ~= "" then
       bmap("n", km.toc_sidebar, function()
         require("super-markdown.toc.sidebar").toggle()

@@ -221,6 +221,7 @@ M.render = render.render
 M.clear = render.clear
 M.toc = toc_picker.open
 M.toc_sidebar = toc_sidebar.toggle
+M.toc_sidebar_pos = toc_sidebar.set_position
 M.mermaid_preview = mermaid.preview_under_cursor
 M.checkbox_toggle = checkbox.toggle
 M.table_format = table_tool.format

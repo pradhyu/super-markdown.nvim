@@ -7,9 +7,9 @@ local subcommands = {
   toggle = function() require("super-markdown").toggle() end,
   preview = function() require("super-markdown").preview_pane() end,
   preview_pane = function() require("super-markdown").preview_pane() end,
-  preview_only = function() require("super-markdown").reader_mode() end,
-  reader = function() require("super-markdown").reader_mode() end,
-  reader_mode = function() require("super-markdown").reader_mode() end,
+  preview_only = function(args) require("super-markdown").reader_mode(args and args[2]) end,
+  reader = function(args) require("super-markdown").reader_mode(args and args[2]) end,
+  reader_mode = function(args) require("super-markdown").reader_mode(args and args[2]) end,
   toggle_editor = function() require("super-markdown").toggle_editor() end,
   hide_editor = function() require("super-markdown").hide_editor() end,
   show_editor = function() require("super-markdown").show_editor() end,
@@ -18,7 +18,8 @@ local subcommands = {
   clear = function() require("super-markdown").clear() end,
   reload = function() require("super-markdown").reload() end,
   toc = function() require("super-markdown").toc() end,
-  toc_sidebar = function() require("super-markdown").toc_sidebar() end,
+  toc_sidebar = function(args) require("super-markdown").toc_sidebar(args and args[2]) end,
+  toc_sidebar_pos = function(args) require("super-markdown").toc_sidebar_pos(args and args[2]) end,
   mermaid = function() require("super-markdown").mermaid_preview() end,
   checkbox = function() require("super-markdown").checkbox_toggle() end,
   table_format = function() require("super-markdown").table_format() end,
@@ -64,6 +65,18 @@ end, {
       end
       table.sort(matches)
       return matches
+    elseif #words == 3 then
+      local sub = words[2]
+      if sub == "toc_sidebar" or sub == "toc_sidebar_pos" or sub == "reader" or sub == "reader_mode" or sub == "preview_only" then
+        local opts = { "left", "right", "flip" }
+        local matches = {}
+        for _, opt in ipairs(opts) do
+          if vim.startswith(opt, words[3] or "") then
+            table.insert(matches, opt)
+          end
+        end
+        return matches
+      end
     end
   end,
   desc = "SuperMarkdown command suite",

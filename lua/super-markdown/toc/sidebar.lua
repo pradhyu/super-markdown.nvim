@@ -7,12 +7,39 @@ local sidebar_win = nil
 local sidebar_buf = nil
 local source_buf = nil
 local source_win = nil
+local current_pos = nil
 local headings_cache = {}
 local augroup_id = nil
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_toc_sidebar")
 
 function M.is_open()
   return sidebar_win ~= nil and vim.api.nvim_win_is_valid(sidebar_win)
+end
+
+function M.get_position()
+  return current_pos or ((config.options.toc and config.options.toc.sidebar and config.options.toc.sidebar.position) or "right")
+end
+
+function M.set_position(pos)
+  config.options.toc = config.options.toc or {}
+  config.options.toc.sidebar = config.options.toc.sidebar or {}
+  local cur = M.get_position()
+  if not pos or pos == "" or pos == "toggle" or pos == "flip" then
+    pos = (cur == "left") and "right" or "left"
+  else
+    pos = pos:lower()
+  end
+  if pos ~= "left" and pos ~= "right" then
+    vim.notify("SuperMarkdown: Invalid sidebar position '" .. tostring(pos) .. "' (use 'left' or 'right')", vim.log.levels.WARN)
+    return
+  end
+  config.options.toc.sidebar.position = pos
+  current_pos = pos
+  if M.is_open() then
+    local was_focused = (vim.api.nvim_get_current_win() == sidebar_win)
+    M.open({ position = pos, focus_sidebar = was_focused })
+  end
+  vim.notify("SuperMarkdown: TOC Sidebar position → " .. pos .. " 󰑐", vim.log.levels.INFO)
 end
 
 function M.get_source_buf()
@@ -62,6 +89,21 @@ function M.close()
 end
 
 function M.toggle(opts)
+  if type(opts) == "string" and opts ~= "" then
+    local arg = opts:lower()
+    if arg == "flip" or arg == "switch" then
+      M.set_position("toggle")
+      return
+    elseif arg == "left" or arg == "right" then
+      if M.is_open() and M.get_position() ~= arg then
+        M.set_position(arg)
+        return
+      end
+      opts = { position = arg }
+    else
+      opts = {}
+    end
+  end
   if M.is_open() then
     M.close()
     return
@@ -80,8 +122,9 @@ function M.refresh()
   local headings = toc.get_headings(source_buf)
   headings_cache = headings
 
+  local side_badge = (M.get_position() == "left") and "[Left | S/L→Right]" or "[Right | S/H→Left]"
   local lines = {
-    " 󰲡 Table of Contents",
+    " 󰲡 TOC " .. side_badge,
     "────────────────────────────────────────",
   }
   for _, h in ipairs(headings) do
@@ -222,7 +265,11 @@ function M.jump_to_heading(focus_editor)
 end
 
 function M.open(opts)
-  opts = opts or {}
+  if type(opts) == "string" then
+    opts = { position = opts:lower() }
+  else
+    opts = opts or {}
+  end
   M.close()
 
   local cur_win = vim.api.nvim_get_current_win()
@@ -247,11 +294,12 @@ function M.open(opts)
 
   local s_opts = config.options.toc.sidebar or {}
   local width = opts.width or s_opts.width or 36
-  local pos = opts.position or s_opts.position or "right"
-  -- When in Preview-Only / Reader Mode (editor hidden), place TOC sidebar on the left for natural reading
-  if not opts.position and ok_p and pp.is_open() and not pp.is_editor_visible() then
-    pos = "left"
+  local pos = opts.position or current_pos or s_opts.position or "right"
+  if pos ~= "left" and pos ~= "right" then
+    pos = "right"
   end
+  current_pos = pos
+  s_opts.position = pos
 
   -- Create fixed vertical split window
   local split_cmd = (pos == "left") and ("topleft vertical " .. width .. " split") or ("botright vertical " .. width .. " split")
@@ -311,6 +359,9 @@ function M.open(opts)
         pmod.toggle_editor()
       end
     end)
+    set_keymap("S", function() M.set_position("toggle") end)
+    set_keymap("H", function() M.set_position("left") end)
+    set_keymap("L", function() M.set_position("right") end)
 
     -- Mouse click navigation: move focus to editor/preview at heading, keep sidebar open
     set_keymap("<LeftMouse>", function()
