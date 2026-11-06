@@ -118,6 +118,8 @@ function M.setup_buffer_keymaps(bufnr)
 
   bmap("n", km.toggle_render, M.toggle, "Toggle in-buffer render")
   bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
+  bmap("n", km.toggle_editor, M.toggle_editor, "Toggle Edit Mode Split Visibility (Hide/Show Editor)")
+  bmap("n", km.reader_mode, M.reader_mode, "Enter Reader Mode (Hide Editor + Open Preview & TOC Sidebar)")
   bmap("n", km.toc, M.toc, "Table of Contents (Picker)")
   bmap("n", km.toc_sidebar, M.toc_sidebar, "Table of Contents (Sidebar)")
   bmap("n", km.mermaid_preview, M.mermaid_preview, "Mermaid Diagram Preview")
@@ -211,6 +213,10 @@ M.preview_pane = preview_pane.toggle
 M.preview_open = preview_pane.open
 M.preview_close = preview_pane.close
 M.preview_sync = preview_pane.set_sync
+M.toggle_editor = preview_pane.toggle_editor
+M.hide_editor = preview_pane.hide_editor
+M.show_editor = preview_pane.show_editor
+M.reader_mode = preview_pane.reader_mode
 M.render = render.render
 M.clear = render.clear
 M.toc = toc_picker.open

@@ -40,7 +40,7 @@ function M.open(opts)
 end
 
 function M.open_ui_select()
-  local bufnr = vim.api.nvim_get_current_buf()
+  local bufnr = toc.resolve_markdown_buf(vim.api.nvim_get_current_buf())
   local headings = toc.get_headings(bufnr)
 
   if #headings == 0 then
@@ -55,8 +55,13 @@ function M.open_ui_select()
     end,
   }, function(choice)
     if choice then
-      vim.api.nvim_win_set_cursor(0, { choice.lnum, 0 })
-      vim.cmd("normal! zvzz")
+      local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+      if ok_p and pp.is_open() then
+        pp.jump_to_heading_line(choice.lnum, true)
+      else
+        vim.api.nvim_win_set_cursor(0, { choice.lnum, 0 })
+        vim.cmd("normal! zvzz")
+      end
     end
   end)
 end

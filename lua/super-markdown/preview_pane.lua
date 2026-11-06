@@ -35,6 +35,13 @@ function M.get_buffer()
   return preview_buf
 end
 
+function M.get_source_buf()
+  if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+    return source_buf
+  end
+  return nil
+end
+
 function M.get_line_maps()
   return source_to_preview, preview_to_source
 end
@@ -1193,6 +1200,34 @@ local function get_sync_label()
   end
 end
 
+function M.get_source_win()
+  return resolve_source_win()
+end
+
+function M.is_editor_visible()
+  return resolve_source_win() ~= nil
+end
+
+function M.map_source_to_preview(src_lnum)
+  return map_source_to_preview(src_lnum)
+end
+
+function M.map_preview_to_source(p_lnum)
+  return map_preview_to_source(p_lnum)
+end
+
+function M.get_active_source_line()
+  if M.is_open() and (not M.is_editor_visible() or vim.api.nvim_get_current_win() == preview_win) then
+    local p_cur = vim.api.nvim_win_get_cursor(preview_win)[1]
+    return map_preview_to_source(p_cur)
+  end
+  local s_win = resolve_source_win()
+  if s_win then
+    return vim.api.nvim_win_get_cursor(s_win)[1]
+  end
+  return 1
+end
+
 local function update_winbar()
   if not M.is_open() then
     return
@@ -1203,13 +1238,17 @@ local function update_winbar()
   if src_name == "" then
     src_name = "Markdown"
   end
+  local editor_visible = M.is_editor_visible()
+  local mode_badge = editor_visible and get_sync_label() or "Reader Mode (Editor Hidden)"
+  local edit_hint = editor_visible and "e: Hide Editor | <CR>/2-Click: Focus Edit" or "e/<CR>/2-Click: Show Editor"
   pcall(
     vim.api.nvim_set_option_value,
     "winbar",
     string.format(
-      " 󰍔 SuperMarkdown Live Preview — %s [%s | s: Cycle Sync | <CR>/Double-Click: Edit | q: Close] ",
+      " 󰍔 SuperMarkdown Preview — %s [%s | t: TOC | T: Picker | %s | q: Close] ",
       src_name,
-      get_sync_label()
+      mode_badge,
+      edit_hint
     ),
     { win = preview_win }
   )
@@ -1342,12 +1381,161 @@ function M.sync_scroll()
   end
 end
 
-function M.jump_to_source()
+--- Jump to a heading's 1-indexed source line in both Preview Pane and Editor (even if Editor is hidden)
+function M.jump_to_heading_line(src_lnum, focus_target)
+  local s_win = resolve_source_win()
+  local p_open = M.is_open()
+  is_syncing = true
+
+  if s_win and source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+    local total_s = math.max(1, vim.api.nvim_buf_line_count(source_buf))
+    local clamped_s = math.max(1, math.min(total_s, src_lnum or 1))
+    pcall(vim.api.nvim_win_set_cursor, s_win, { clamped_s, 0 })
+    pcall(vim.api.nvim_win_call, s_win, function()
+      vim.cmd("normal! zvzz")
+    end)
+  end
+
+  if p_open and preview_buf and vim.api.nvim_buf_is_valid(preview_buf) then
+    local target_p = map_source_to_preview(src_lnum or 1)
+    local total_p = math.max(1, vim.api.nvim_buf_line_count(preview_buf))
+    local clamped_p = math.max(1, math.min(total_p, target_p))
+    pcall(vim.api.nvim_win_set_cursor, preview_win, { clamped_p, 0 })
+    pcall(vim.api.nvim_win_call, preview_win, function()
+      vim.cmd("normal! zvzz")
+    end)
+  end
+
+  is_syncing = false
+
+  if focus_target then
+    if p_open and not s_win then
+      pcall(vim.api.nvim_set_current_win, preview_win)
+    elseif s_win then
+      pcall(vim.api.nvim_set_current_win, s_win)
+    end
+  end
+end
+
+--- Hide the editable Markdown window so only the Live Preview (and optional TOC Sidebar) is visible
+function M.hide_editor()
+  if not M.is_open() then
+    M.open({ focus_preview = true })
+  end
   if not M.is_open() then
     return
   end
+  if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+    vim.bo[source_buf].bufhidden = "hide"
+    vim.bo[source_buf].buflisted = true
+  end
   local s_win = resolve_source_win()
-  if not s_win then
+  if s_win and s_win ~= preview_win and #vim.api.nvim_tabpage_list_wins(0) > 1 then
+    pcall(vim.api.nvim_set_current_win, preview_win)
+    pcall(vim.api.nvim_win_close, s_win, false)
+    source_win = nil
+  end
+  update_winbar()
+  pcall(function()
+    local sb = require("super-markdown.toc.sidebar")
+    if sb.is_open() then
+      sb.sync_cursor()
+    end
+  end)
+end
+
+--- Show the editable Markdown window alongside the Live Preview at the given source line and topline
+function M.show_editor(target_src_lnum, target_src_top, focus_editor)
+  if not (source_buf and vim.api.nvim_buf_is_valid(source_buf)) then
+    return nil
+  end
+  local s_win = resolve_source_win()
+  if not s_win and M.is_open() then
+    local p_opts = (config.options and config.options.preview_pane) or {}
+    local pos = p_opts.position or "right"
+    local p_width = vim.api.nvim_win_get_width(preview_win)
+    local split_w = math.max(40, math.floor(p_width * 0.5))
+    local split_cmd = (pos == "left")
+      and ("rightbelow vertical " .. split_w .. " split")
+      or ("leftabove vertical " .. split_w .. " split")
+
+    vim.api.nvim_win_call(preview_win, function()
+      vim.cmd(split_cmd)
+      s_win = vim.api.nvim_get_current_win()
+      vim.api.nvim_win_set_buf(s_win, source_buf)
+      pcall(vim.api.nvim_set_option_value, "number", true, { win = s_win })
+      pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = s_win })
+      pcall(vim.api.nvim_set_option_value, "signcolumn", "yes", { win = s_win })
+      pcall(vim.api.nvim_set_option_value, "winbar", "", { win = s_win })
+    end)
+    source_win = s_win
+    pcall(function()
+      require("super-markdown.render").attach(source_buf)
+      require("super-markdown.folds").attach(source_buf)
+    end)
+  end
+
+  if s_win and vim.api.nvim_win_is_valid(s_win) then
+    local total_s = math.max(1, vim.api.nvim_buf_line_count(source_buf))
+    local src_lnum = math.max(1, math.min(total_s, target_src_lnum or 1))
+    is_syncing = true
+    if focus_editor ~= false then
+      pcall(vim.api.nvim_set_current_win, s_win)
+    end
+    pcall(vim.api.nvim_win_set_cursor, s_win, { src_lnum, 0 })
+    pcall(vim.api.nvim_win_call, s_win, function()
+      vim.cmd("normal! zv")
+      if target_src_top then
+        vim.fn.winrestview({ lnum = src_lnum, topline = math.max(1, math.min(src_lnum, target_src_top)), col = 0 })
+      else
+        vim.cmd("normal! zz")
+      end
+    end)
+    is_syncing = false
+    update_winbar()
+    M.sync_from_source()
+  end
+  return s_win
+end
+
+--- Toggle visibility of the editable Markdown split while keeping Live Preview open
+function M.toggle_editor()
+  if not M.is_open() then
+    M.open({ focus_preview = true })
+    M.hide_editor()
+    return
+  end
+  if M.is_editor_visible() then
+    M.hide_editor()
+  else
+    local p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
+    local p_top = vim.fn.line("w0", preview_win)
+    local src_lnum = map_preview_to_source(p_cursor)
+    local offset = math.max(0, p_cursor - p_top)
+    local src_top = math.max(1, math.min(src_lnum, src_lnum - offset))
+    M.show_editor(src_lnum, src_top, true)
+  end
+end
+
+--- Enter Reader Mode: open Live Preview, hide Editor split, and open TOC Sidebar
+function M.reader_mode()
+  if not M.is_open() then
+    M.open({ focus_preview = true })
+  end
+  M.hide_editor()
+  local sb = require("super-markdown.toc.sidebar")
+  if not sb.is_open() then
+    sb.open({ focus_sidebar = false })
+  else
+    sb.refresh()
+  end
+  if M.is_open() then
+    pcall(vim.api.nvim_set_current_win, preview_win)
+  end
+end
+
+function M.jump_to_source()
+  if not M.is_open() then
     return
   end
 
@@ -1356,6 +1544,13 @@ function M.jump_to_source()
   local src_lnum = map_preview_to_source(p_cursor)
   local offset = math.max(0, p_cursor - p_top)
   local src_top = math.max(1, math.min(src_lnum, src_lnum - offset))
+
+  local s_win = resolve_source_win()
+  if not s_win then
+    -- Editor split was hidden: make Edit Mode visible at the exact same line and screen offset!
+    M.show_editor(src_lnum, src_top, true)
+    return
+  end
 
   is_syncing = true
   vim.api.nvim_set_current_win(s_win)
@@ -1382,8 +1577,13 @@ function M.close()
 
   local win_to_close = preview_win
   local buf_to_delete = preview_buf
-  local prev_win = source_win
+  local prev_win = resolve_source_win()
   local prev_buf = source_buf
+  local restore_lnum = 1
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    local p_cur = vim.api.nvim_win_get_cursor(preview_win)[1]
+    restore_lnum = map_preview_to_source(p_cur)
+  end
 
   preview_win = nil
   preview_buf = nil
@@ -1397,12 +1597,24 @@ function M.close()
   last_synced_p_top = nil
   last_synced_p_cursor = nil
 
-  if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+  if prev_win and vim.api.nvim_win_is_valid(prev_win) and prev_win ~= win_to_close then
     pcall(vim.api.nvim_set_current_win, prev_win)
-  end
-  if win_to_close and vim.api.nvim_win_is_valid(win_to_close) then
+    if win_to_close and vim.api.nvim_win_is_valid(win_to_close) then
+      pcall(vim.api.nvim_win_close, win_to_close, true)
+    end
+  elseif win_to_close and vim.api.nvim_win_is_valid(win_to_close) and prev_buf and vim.api.nvim_buf_is_valid(prev_buf) then
+    -- Editor split was hidden: restore the editable Markdown buffer into this window at the current line
+    pcall(vim.api.nvim_win_set_buf, win_to_close, prev_buf)
+    pcall(vim.api.nvim_set_option_value, "number", true, { win = win_to_close })
+    pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = win_to_close })
+    pcall(vim.api.nvim_set_option_value, "signcolumn", "yes", { win = win_to_close })
+    pcall(vim.api.nvim_set_option_value, "winbar", "", { win = win_to_close })
+    pcall(vim.api.nvim_win_set_cursor, win_to_close, { restore_lnum, 0 })
+    pcall(vim.api.nvim_set_current_win, win_to_close)
+  elseif win_to_close and vim.api.nvim_win_is_valid(win_to_close) then
     pcall(vim.api.nvim_win_close, win_to_close, true)
   end
+
   if buf_to_delete and vim.api.nvim_buf_is_valid(buf_to_delete) then
     pcall(vim.api.nvim_buf_delete, buf_to_delete, { force = true })
   end
@@ -1478,16 +1690,49 @@ function M.open(opts)
     bmap("n", "<Esc>", M.close, "Close Live Preview Pane")
     bmap("n", "r", M.refresh, "Refresh Live Preview Pane")
     bmap("n", "m", "<Nop>", "Disable accidental mark creation in Preview Pane")
-    local toggle_lhs = config.options and config.options.keymaps and config.options.keymaps.preview_pane
+    local km = (config.options and config.options.keymaps) or {}
+    local toggle_lhs = km.preview_pane
     if toggle_lhs and toggle_lhs ~= "" then
       bmap("n", toggle_lhs, M.toggle, "Toggle Live Preview Pane")
+    end
+    bmap("n", "t", function()
+      require("super-markdown.toc.sidebar").toggle()
+    end, "Toggle Table of Contents Sidebar")
+    if km.toc_sidebar and km.toc_sidebar ~= "" then
+      bmap("n", km.toc_sidebar, function()
+        require("super-markdown.toc.sidebar").toggle()
+      end, "Toggle Table of Contents Sidebar")
+    end
+    bmap("n", "T", function()
+      require("super-markdown.toc.picker").open()
+    end, "Open Table of Contents Picker")
+    if km.toc and km.toc ~= "" then
+      bmap("n", km.toc, function()
+        require("super-markdown.toc.picker").open()
+      end, "Open Table of Contents Picker")
+    end
+    bmap("n", "e", function()
+      M.toggle_editor()
+    end, "Toggle Edit Mode Split Visibility")
+    if km.toggle_editor and km.toggle_editor ~= "" then
+      bmap("n", km.toggle_editor, function()
+        M.toggle_editor()
+      end, "Toggle Edit Mode Split Visibility")
+    end
+    bmap("n", "E", function()
+      M.reader_mode()
+    end, "Enter Reader Mode (Hide Editor + Open TOC Sidebar)")
+    if km.reader_mode and km.reader_mode ~= "" then
+      bmap("n", km.reader_mode, function()
+        M.reader_mode()
+      end, "Enter Reader Mode (Hide Editor + Open TOC Sidebar)")
     end
     bmap("n", "s", function()
       M.set_sync("cycle")
     end, "Cycle Scroll Sync Mode (Both / Source→Preview / Preview→Source / Off)")
     bmap("n", "<CR>", function()
       M.jump_to_source()
-    end, "Jump to Editable Source Buffer")
+    end, "Jump to (or Show) Editable Source Buffer at Current Line")
     bmap({ "n", "v", "x", "s" }, "<2-LeftMouse>", function()
       local mode = vim.api.nvim_get_mode().mode
       if mode:match("^[vVsS\22\19]") then
@@ -1498,17 +1743,19 @@ function M.open(opts)
         pcall(vim.api.nvim_win_set_cursor, preview_win, { mouse.line, math.max(0, (mouse.column or 1) - 1) })
       end
       M.jump_to_source()
-    end, "Double-Click Jump to Editable Source Buffer")
+    end, "Double-Click to Show / Jump to Editable Source Buffer at Same Line")
     bmap("n", "gx", function()
       local p_line = vim.api.nvim_win_get_cursor(preview_win)[1]
       local s_line = map_preview_to_source(p_line)
-      local s_win = resolve_source_win()
-      if s_line and s_win and source_buf and vim.api.nvim_buf_is_valid(source_buf) then
+      if s_line and source_buf and vim.api.nvim_buf_is_valid(source_buf) then
         local ref = link_tool.get_reference_at(source_buf, s_line, 0)
         if ref then
-          vim.api.nvim_set_current_win(s_win)
-          pcall(vim.api.nvim_win_set_cursor, s_win, { s_line, 0 })
-          link_tool.follow()
+          local s_win = resolve_source_win() or M.show_editor(s_line, nil, true)
+          if s_win then
+            vim.api.nvim_set_current_win(s_win)
+            pcall(vim.api.nvim_win_set_cursor, s_win, { s_line, 0 })
+            link_tool.follow()
+          end
         end
       end
     end, "Follow Link in Source Line")
@@ -1554,6 +1801,12 @@ function M.open(opts)
     callback = function()
       if vim.api.nvim_get_current_win() == preview_win then
         M.sync_from_preview()
+        pcall(function()
+          local sb = require("super-markdown.toc.sidebar")
+          if sb.is_open() then
+            sb.sync_cursor()
+          end
+        end)
       end
     end,
   })

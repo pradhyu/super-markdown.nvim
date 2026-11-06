@@ -3,8 +3,32 @@ local analyzer = require("super-markdown.spec.analyzer")
 
 local M = {}
 
-function M.get_headings(bufnr)
+function M.resolve_markdown_buf(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if bufnr and vim.api.nvim_buf_is_valid(bufnr) then
+    local ft = vim.bo[bufnr].filetype
+    if ft == "supermarkdown_preview" or ft == "supermarkdown_toc" then
+      local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+      if ok_p and pp.get_source_buf then
+        local sbuf = pp.get_source_buf()
+        if sbuf and vim.api.nvim_buf_is_valid(sbuf) then
+          return sbuf
+        end
+      end
+      local ok_s, sb = pcall(require, "super-markdown.toc.sidebar")
+      if ok_s and sb.get_source_buf then
+        local sbuf = sb.get_source_buf()
+        if sbuf and vim.api.nvim_buf_is_valid(sbuf) then
+          return sbuf
+        end
+      end
+    end
+  end
+  return bufnr
+end
+
+function M.get_headings(bufnr)
+  bufnr = M.resolve_markdown_buf(bufnr)
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local headings = {}
   local icons = config.options.render.headings.icons or { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " }

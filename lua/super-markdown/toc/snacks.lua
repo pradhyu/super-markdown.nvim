@@ -8,7 +8,7 @@ function M.open()
     return false, "Snacks.picker is not available"
   end
 
-  local bufnr = vim.api.nvim_get_current_buf()
+  local bufnr = toc.resolve_markdown_buf(vim.api.nvim_get_current_buf())
   local filename = vim.api.nvim_buf_get_name(bufnr)
   local headings = toc.get_headings(bufnr)
 
@@ -40,8 +40,13 @@ function M.open()
     confirm = function(picker, item)
       picker:close()
       if item and item.pos then
-        vim.api.nvim_win_set_cursor(0, item.pos)
-        vim.cmd("normal! zvzz")
+        local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+        if ok_p and pp.is_open() then
+          pp.jump_to_heading_line(item.pos[1], true)
+        else
+          vim.api.nvim_win_set_cursor(0, item.pos)
+          vim.cmd("normal! zvzz")
+        end
       end
     end,
   })

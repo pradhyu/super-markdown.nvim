@@ -15,6 +15,26 @@ function M.is_open()
   return sidebar_win ~= nil and vim.api.nvim_win_is_valid(sidebar_win)
 end
 
+function M.get_source_buf()
+  return source_buf
+end
+
+local function resolve_target_win()
+  local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+  if ok_p and pp.is_open() then
+    if not pp.is_editor_visible() then
+      return pp.get_window()
+    end
+  end
+  if source_win and vim.api.nvim_win_is_valid(source_win) then
+    return source_win
+  end
+  if ok_p and pp.is_open() then
+    return pp.get_window()
+  end
+  return nil
+end
+
 function M.close()
   if augroup_id then
     pcall(vim.api.nvim_del_augroup_by_id, augroup_id)
@@ -22,7 +42,7 @@ function M.close()
   end
   local win_to_close = sidebar_win
   local buf_to_delete = sidebar_buf
-  local prev_win = source_win
+  local prev_win = resolve_target_win()
 
   sidebar_win = nil
   sidebar_buf = nil
@@ -30,7 +50,7 @@ function M.close()
   source_win = nil
   headings_cache = {}
 
-  if prev_win and vim.api.nvim_win_is_valid(prev_win) then
+  if prev_win and vim.api.nvim_win_is_valid(prev_win) and prev_win ~= win_to_close then
     pcall(vim.api.nvim_set_current_win, prev_win)
   end
   if win_to_close and vim.api.nvim_win_is_valid(win_to_close) then
@@ -41,12 +61,12 @@ function M.close()
   end
 end
 
-function M.toggle()
+function M.toggle(opts)
   if M.is_open() then
     M.close()
     return
   end
-  M.open()
+  M.open(opts)
 end
 
 function M.refresh()
@@ -85,8 +105,22 @@ function M.refresh()
   M.sync_cursor()
 end
 
+local function get_current_source_line()
+  local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+  if ok_p and pp.is_open() and (not pp.is_editor_visible() or vim.api.nvim_get_current_win() == pp.get_window()) then
+    return pp.get_active_source_line()
+  end
+  if source_win and vim.api.nvim_win_is_valid(source_win) then
+    return vim.api.nvim_win_get_cursor(source_win)[1]
+  end
+  if ok_p and pp.is_open() then
+    return pp.get_active_source_line()
+  end
+  return 1
+end
+
 function M.sync_cursor()
-  if not M.is_open() or not (source_win and vim.api.nvim_win_is_valid(source_win)) then
+  if not M.is_open() then
     return
   end
   -- Don't override sidebar highlight while user is actively browsing inside sidebar
@@ -94,7 +128,7 @@ function M.sync_cursor()
     return
   end
 
-  local cursor_line = vim.api.nvim_win_get_cursor(source_win)[1]
+  local cursor_line = get_current_source_line()
   local active_idx = nil
 
   for i, h in ipairs(headings_cache) do
@@ -117,7 +151,6 @@ end
 
 function M.preview_heading()
   if not (sidebar_win and vim.api.nvim_win_is_valid(sidebar_win)) then return end
-  if not (source_win and vim.api.nvim_win_is_valid(source_win)) then return end
   if not (sidebar_buf and vim.api.nvim_buf_is_valid(sidebar_buf)) then return end
   if #headings_cache == 0 then return end
 
@@ -132,10 +165,15 @@ function M.preview_heading()
 
   local target = headings_cache[heading_idx]
   if target then
-    pcall(vim.api.nvim_win_set_cursor, source_win, { target.lnum, 0 })
-    pcall(vim.api.nvim_win_call, source_win, function()
-      vim.cmd("normal! zvzz")
-    end)
+    local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+    if ok_p and pp.is_open() then
+      pp.jump_to_heading_line(target.lnum, false)
+    elseif source_win and vim.api.nvim_win_is_valid(source_win) then
+      pcall(vim.api.nvim_win_set_cursor, source_win, { target.lnum, 0 })
+      pcall(vim.api.nvim_win_call, source_win, function()
+        vim.cmd("normal! zvzz")
+      end)
+    end
 
     pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ID, 2, -1)
     local hl_line = math.max(2, cursor_row - 1)
@@ -148,7 +186,6 @@ end
 
 function M.jump_to_heading(focus_editor)
   if not (sidebar_win and vim.api.nvim_win_is_valid(sidebar_win)) then return end
-  if not (source_win and vim.api.nvim_win_is_valid(source_win)) then return end
   if #headings_cache == 0 then return end
 
   local cursor_row = vim.api.nvim_win_get_cursor(sidebar_win)[1]
@@ -162,13 +199,20 @@ function M.jump_to_heading(focus_editor)
 
   local target = headings_cache[heading_idx]
   if target then
-    pcall(vim.api.nvim_win_set_cursor, source_win, { target.lnum, 0 })
-    pcall(vim.api.nvim_win_call, source_win, function()
-      vim.cmd("normal! zvzz")
-    end)
+    local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+    if ok_p and pp.is_open() then
+      pp.jump_to_heading_line(target.lnum, focus_editor)
+    elseif source_win and vim.api.nvim_win_is_valid(source_win) then
+      pcall(vim.api.nvim_win_set_cursor, source_win, { target.lnum, 0 })
+      pcall(vim.api.nvim_win_call, source_win, function()
+        vim.cmd("normal! zvzz")
+      end)
+      if focus_editor then
+        vim.api.nvim_set_current_win(source_win)
+      end
+    end
 
     if focus_editor then
-      vim.api.nvim_set_current_win(source_win)
       local s_opts = config.options.toc.sidebar or {}
       if s_opts.auto_close then
         M.close()
@@ -177,11 +221,22 @@ function M.jump_to_heading(focus_editor)
   end
 end
 
-function M.open()
+function M.open(opts)
+  opts = opts or {}
   M.close()
 
-  source_buf = vim.api.nvim_get_current_buf()
-  source_win = vim.api.nvim_get_current_win()
+  local cur_win = vim.api.nvim_get_current_win()
+  local cur_buf = vim.api.nvim_get_current_buf()
+  source_buf = toc.resolve_markdown_buf(cur_buf)
+
+  local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+  if ok_p and pp.is_open() and pp.get_source_win() then
+    source_win = pp.get_source_win()
+  elseif cur_buf == source_buf then
+    source_win = cur_win
+  else
+    source_win = nil
+  end
 
   local headings = toc.get_headings(source_buf)
   if #headings == 0 then
@@ -191,8 +246,12 @@ function M.open()
   headings_cache = headings
 
   local s_opts = config.options.toc.sidebar or {}
-  local width = s_opts.width or 36
-  local pos = s_opts.position or "right"
+  local width = opts.width or s_opts.width or 36
+  local pos = opts.position or s_opts.position or "right"
+  -- When in Preview-Only / Reader Mode (editor hidden), place TOC sidebar on the left for natural reading
+  if not opts.position and ok_p and pp.is_open() and not pp.is_editor_visible() then
+    pos = "left"
+  end
 
   -- Create fixed vertical split window
   local split_cmd = (pos == "left") and ("topleft vertical " .. width .. " split") or ("botright vertical " .. width .. " split")
@@ -219,8 +278,8 @@ function M.open()
 
   M.refresh()
 
-  -- Position sidebar cursor at active heading corresponding to current editor position
-  local cursor_line = vim.api.nvim_win_get_cursor(source_win)[1]
+  -- Position sidebar cursor at active heading corresponding to current editor/preview position
+  local cursor_line = get_current_source_line()
   local initial_idx = 1
   for i, h in ipairs(headings_cache) do
     if h.lnum <= cursor_line then
@@ -242,11 +301,18 @@ function M.open()
     set_keymap("q", M.close)
     set_keymap("Q", M.close)
     set_keymap("<Esc>", M.close)
+    set_keymap("t", M.close)
     set_keymap("<leader>ms", M.close)
     set_keymap("<CR>", function() M.jump_to_heading(true) end)
     set_keymap("o", function() M.jump_to_heading(true) end)
+    set_keymap("e", function()
+      local ok_pp, pmod = pcall(require, "super-markdown.preview_pane")
+      if ok_pp then
+        pmod.toggle_editor()
+      end
+    end)
 
-    -- Mouse click navigation: move focus to editor at heading, keep sidebar open
+    -- Mouse click navigation: move focus to editor/preview at heading, keep sidebar open
     set_keymap("<LeftMouse>", function()
       local mouse = vim.fn.getmousepos()
       if mouse.winid == sidebar_win and mouse.line > 2 then
@@ -268,6 +334,10 @@ function M.open()
   end
 
   bind_sidebar_keys()
+
+  if opts.focus_sidebar == false and cur_win and vim.api.nvim_win_is_valid(cur_win) then
+    pcall(vim.api.nvim_set_current_win, cur_win)
+  end
 
   -- Autocommands for live sync and auto-refresh
   augroup_id = vim.api.nvim_create_augroup("SuperMarkdownTocSidebar_" .. source_buf, { clear = true })

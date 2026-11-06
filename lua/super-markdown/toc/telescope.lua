@@ -15,7 +15,7 @@ function M.open(opts)
   local previewers = require("telescope.previewers")
   local entry_display = require("telescope.pickers.entry_display")
 
-  local bufnr = vim.api.nvim_get_current_buf()
+  local bufnr = toc.resolve_markdown_buf(vim.api.nvim_get_current_buf())
   local filename = vim.api.nvim_buf_get_name(bufnr)
   local headings = toc.get_headings(bufnr)
 
@@ -149,8 +149,13 @@ function M.open(opts)
         actions.close(prompt_bufnr)
         local selection = action_state.get_selected_entry()
         if selection and selection.value then
-          vim.api.nvim_win_set_cursor(0, { selection.value.lnum, 0 })
-          vim.cmd("normal! zvzz")
+          local ok_p, pp = pcall(require, "super-markdown.preview_pane")
+          if ok_p and pp.is_open() then
+            pp.jump_to_heading_line(selection.value.lnum, true)
+          else
+            vim.api.nvim_win_set_cursor(0, { selection.value.lnum, 0 })
+            vim.cmd("normal! zvzz")
+          end
         end
       end)
       if user_attach then
