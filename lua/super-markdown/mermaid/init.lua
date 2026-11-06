@@ -93,8 +93,14 @@ function M.render_inline(bufnr, ns_id, opts)
     if not virt_lines then
       local ascii_lines = ascii.render(code)
       virt_lines = {}
-      for _, l in ipairs(ascii_lines) do
-        table.insert(virt_lines, { { l, "SuperMarkdownTableBorder" } })
+      for idx, l in ipairs(ascii_lines) do
+        if idx == 1 then
+          table.insert(virt_lines, { { l, "SuperMarkdownMermaidReady" } })
+        elseif ascii.tokenize_line then
+          table.insert(virt_lines, ascii.tokenize_line(l))
+        else
+          table.insert(virt_lines, { { l, "SuperMarkdownTableBorder" } })
+        end
       end
       diagram_cache[hash] = virt_lines
     end

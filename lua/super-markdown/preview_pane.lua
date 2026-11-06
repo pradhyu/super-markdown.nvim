@@ -483,11 +483,16 @@ local function highlight_mermaid_diagram_line(padded_d)
       or b3 == "└" or b3 == "┴" or b3 == "┘"
       or b3 == "╭" or b3 == "╮" or b3 == "╰" or b3 == "╯"
       or b3 == "╔" or b3 == "═" or b3 == "╗" or b3 == "║" or b3 == "╚" or b3 == "╝"
+      or b3 == "◇" or b3 == "╱" or b3 == "╲" or b3 == "┈" or b3 == "┄"
       or b3 == "┼"
     then
       table.insert(spans, { i - 1, i + 2, "SuperMarkdownMermaidType" })
       i = i + 3
-    elseif b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼" or b3 == "●" or b3 == "○" then
+    elseif
+      b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼"
+      or b3 == "●" or b3 == "○" or b3 == "◉" or b3 == "⟲"
+      or b3 == "╌" or b3 == "█" or b3 == "░"
+    then
       table.insert(spans, { i - 1, i + 2, "SuperMarkdownMermaidArrow" })
       i = i + 3
     else
@@ -514,7 +519,10 @@ local function highlight_mermaid_diagram_line(padded_d)
             or nb3 == "└" or nb3 == "┴" or nb3 == "┘"
             or nb3 == "╭" or nb3 == "╮" or nb3 == "╰" or nb3 == "╯"
             or nb3 == "╔" or nb3 == "═" or nb3 == "╗" or nb3 == "║" or nb3 == "╚" or nb3 == "╝"
+            or nb3 == "◇" or nb3 == "╱" or nb3 == "╲" or nb3 == "┈" or nb3 == "┄"
             or nb3 == "▶" or nb3 == "◀" or nb3 == "▲" or nb3 == "▼"
+            or nb3 == "●" or nb3 == "○" or nb3 == "◉" or nb3 == "⟲"
+            or nb3 == "╌" or nb3 == "█" or nb3 == "░"
             or nch == "["
           then
             break
