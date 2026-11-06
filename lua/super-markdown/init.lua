@@ -67,6 +67,11 @@ function M.setup(user_opts)
       -- Attach buffer-local keymaps
       M.setup_buffer_keymaps(bufnr)
 
+      -- Start interval auto-refresh for external/AI file changes if enabled
+      if preview_pane.is_auto_refresh_enabled() then
+        preview_pane.start_auto_refresh()
+      end
+
       -- Auto-format markdown tables when finishing an edit (InsertLeave) or saving (BufWritePre)
       if config.options.tools and config.options.tools.auto_format_table ~= false then
         vim.api.nvim_create_autocmd("InsertLeave", {
@@ -120,6 +125,7 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
   bmap("n", km.toggle_editor, M.toggle_editor, "Toggle Edit Mode Split Visibility (Hide/Show Editor)")
   bmap("n", km.reader_mode, M.reader_mode, "Enter Reader Mode (Hide Editor + Open Preview & TOC Sidebar)")
+  bmap("n", km.auto_refresh, M.auto_refresh, "Toggle Interval Auto-Refresh (Disk / Visual / Preview / Sidebar)")
   bmap("n", km.toc, M.toc, "Table of Contents (Picker)")
   bmap("n", km.toc_sidebar, M.toc_sidebar, "Table of Contents (Sidebar)")
   bmap("n", km.mermaid_preview, M.mermaid_preview, "Mermaid Diagram Preview")
@@ -168,6 +174,7 @@ end
 
 function M.reload()
   pcall(function()
+    preview_pane.stop_auto_refresh()
     if toc_sidebar.is_open() then
       toc_sidebar.close()
     end
@@ -203,6 +210,12 @@ function M.reload()
       end
     end
   end
+  pcall(function()
+    local pp = require("super-markdown.preview_pane")
+    if pp.is_auto_refresh_enabled() then
+      pp.start_auto_refresh()
+    end
+  end)
 
   vim.notify("SuperMarkdown: All modules, folds & keymaps reloaded 󰑐", vim.log.levels.INFO)
 end
@@ -213,6 +226,7 @@ M.preview_pane = preview_pane.toggle
 M.preview_open = preview_pane.open
 M.preview_close = preview_pane.close
 M.preview_sync = preview_pane.set_sync
+M.auto_refresh = preview_pane.set_auto_refresh
 M.toggle_editor = preview_pane.toggle_editor
 M.hide_editor = preview_pane.hide_editor
 M.show_editor = preview_pane.show_editor

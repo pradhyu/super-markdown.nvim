@@ -176,10 +176,14 @@ function M.attach(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   if not vim.api.nvim_buf_is_valid(bufnr) then return end
 
+  pcall(function()
+    vim.bo[bufnr].autoread = true
+  end)
+
   M.render(bufnr)
 
   local group = vim.api.nvim_create_augroup("SuperMarkdownRender_" .. bufnr, { clear = true })
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWinEnter" }, {
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWinEnter", "BufReadPost", "FileChangedShellPost" }, {
     group = group,
     buffer = bufnr,
     callback = function()

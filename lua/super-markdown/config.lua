@@ -172,6 +172,8 @@ M.defaults = {
     sync_scroll = true,        -- master toggle to enable/disable scroll sync
     sync_from_source = true,   -- sync preview pane when scrolling/moving in editable buffer
     sync_from_preview = true,  -- sync editable buffer when scrolling/moving in preview pane
+    auto_refresh = true,       -- auto-reload external/AI file changes & update visual mode, preview, and TOC sidebar at intervals
+    auto_refresh_interval = 1000, -- interval in milliseconds (default: 1000ms)
   },
 
   -- Markdown folding options
@@ -207,6 +209,7 @@ M.defaults = {
     preview_pane = "<leader>mv",
     toggle_editor = "<leader>me",
     reader_mode = "<leader>mV",
+    auto_refresh = "<leader>ma",
     toc = "<leader>mo",
     toc_sidebar = "<leader>ms",
     mermaid_preview = "<leader>mp",

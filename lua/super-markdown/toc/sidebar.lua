@@ -119,10 +119,22 @@ function M.refresh()
     return
   end
 
+  local saved_view = nil
+  if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    pcall(function()
+      saved_view = vim.api.nvim_win_call(sidebar_win, vim.fn.winsaveview)
+    end)
+  end
+
   local headings = toc.get_headings(source_buf)
   headings_cache = headings
 
-  local side_badge = (M.get_position() == "left") and "[Left | S/L→Right]" or "[Right | S/H→Left]"
+  local auto_badge = ""
+  pcall(function()
+    local pp = require("super-markdown.preview_pane")
+    auto_badge = pp.is_auto_refresh_enabled() and " | Auto:ON(a)" or " | Auto:OFF(a)"
+  end)
+  local side_badge = (M.get_position() == "left") and ("[Left | S→R" .. auto_badge .. "]") or ("[Right | S→L" .. auto_badge .. "]")
   local lines = {
     " 󰲡 TOC " .. side_badge,
     "────────────────────────────────────────",
@@ -134,6 +146,15 @@ function M.refresh()
   vim.bo[sidebar_buf].modifiable = true
   vim.api.nvim_buf_set_lines(sidebar_buf, 0, -1, false, lines)
   vim.bo[sidebar_buf].modifiable = false
+
+  if saved_view and sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) then
+    local total_l = math.max(1, #lines)
+    saved_view.lnum = math.max(1, math.min(total_l, saved_view.lnum or 1))
+    saved_view.topline = math.max(1, math.min(total_l, saved_view.topline or 1))
+    pcall(vim.api.nvim_win_call, sidebar_win, function()
+      vim.fn.winrestview(saved_view)
+    end)
+  end
 
   -- Header styling
   pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, 0, 0, {
@@ -362,6 +383,21 @@ function M.open(opts)
     set_keymap("S", function() M.set_position("toggle") end)
     set_keymap("H", function() M.set_position("left") end)
     set_keymap("L", function() M.set_position("right") end)
+    set_keymap("a", function()
+      local ok_pp, pmod = pcall(require, "super-markdown.preview_pane")
+      if ok_pp then
+        pmod.set_auto_refresh("toggle")
+      end
+    end)
+    local km = (config.options and config.options.keymaps) or {}
+    if km.auto_refresh and km.auto_refresh ~= "" then
+      set_keymap(km.auto_refresh, function()
+        local ok_pp, pmod = pcall(require, "super-markdown.preview_pane")
+        if ok_pp then
+          pmod.set_auto_refresh("toggle")
+        end
+      end)
+    end
 
     -- Mouse click navigation: move focus to editor/preview at heading, keep sidebar open
     set_keymap("<LeftMouse>", function()
@@ -381,10 +417,24 @@ function M.open(opts)
 
     set_keymap("<Tab>", function() M.jump_to_heading(false) end)
     set_keymap("p", function() M.jump_to_heading(false) end)
-    set_keymap("r", M.refresh)
+    set_keymap("r", function()
+      local ok_pp, pmod = pcall(require, "super-markdown.preview_pane")
+      if ok_pp then
+        pmod.check_and_refresh_buffers(true)
+      else
+        M.refresh()
+      end
+    end)
   end
 
   bind_sidebar_keys()
+
+  pcall(function()
+    local pp = require("super-markdown.preview_pane")
+    if pp.is_auto_refresh_enabled() then
+      pp.start_auto_refresh()
+    end
+  end)
 
   if opts.focus_sidebar == false and cur_win and vim.api.nvim_win_is_valid(cur_win) then
     pcall(vim.api.nvim_set_current_win, cur_win)
@@ -407,7 +457,7 @@ function M.open(opts)
     buffer = sidebar_buf,
     callback = function() bind_sidebar_keys() end,
   })
-  vim.api.nvim_create_autocmd({ "TextChanged", "BufWritePost" }, {
+  vim.api.nvim_create_autocmd({ "TextChanged", "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
     group = augroup_id,
     buffer = source_buf,
     callback = function() M.refresh() end,

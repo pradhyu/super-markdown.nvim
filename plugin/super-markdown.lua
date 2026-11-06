@@ -14,6 +14,7 @@ local subcommands = {
   hide_editor = function() require("super-markdown").hide_editor() end,
   show_editor = function() require("super-markdown").show_editor() end,
   preview_sync = function(args) require("super-markdown").preview_sync(args and args[2]) end,
+  auto_refresh = function(args) require("super-markdown").auto_refresh(args and args[2]) end,
   render = function() require("super-markdown").render() end,
   clear = function() require("super-markdown").clear() end,
   reload = function() require("super-markdown").reload() end,
@@ -69,6 +70,15 @@ end, {
       local sub = words[2]
       if sub == "toc_sidebar" or sub == "toc_sidebar_pos" or sub == "reader" or sub == "reader_mode" or sub == "preview_only" then
         local opts = { "left", "right", "flip" }
+        local matches = {}
+        for _, opt in ipairs(opts) do
+          if vim.startswith(opt, words[3] or "") then
+            table.insert(matches, opt)
+          end
+        end
+        return matches
+      elseif sub == "auto_refresh" then
+        local opts = { "toggle", "on", "off", "500", "1000", "2000" }
         local matches = {}
         for _, opt in ipairs(opts) do
           if vim.startswith(opt, words[3] or "") then

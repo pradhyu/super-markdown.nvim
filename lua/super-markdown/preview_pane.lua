@@ -13,6 +13,8 @@ local source_buf = nil
 local source_win = nil
 local augroup_id = nil
 local debounce_timer = nil
+local auto_refresh_timer = nil
+local file_watch_state = {}
 local source_to_preview = {}
 local preview_to_source = {}
 local mermaid_cache = {}
@@ -1053,6 +1055,13 @@ function M.refresh()
 
   highlights.setup()
 
+  local saved_p_view = nil
+  if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    pcall(function()
+      saved_p_view = vim.api.nvim_win_call(preview_win, vim.fn.winsaveview)
+    end)
+  end
+
   local win_w = vim.api.nvim_win_get_width(preview_win)
   local out_lines, out_meta, s2p, p2s = M.compile_document(source_buf, win_w)
   source_to_preview = s2p
@@ -1064,6 +1073,15 @@ function M.refresh()
   vim.bo[preview_buf].modifiable = false
   vim.bo[preview_buf].readonly = true
   vim.bo[preview_buf].modified = false
+
+  if saved_p_view and preview_win and vim.api.nvim_win_is_valid(preview_win) then
+    local total_p = math.max(1, #out_lines)
+    saved_p_view.lnum = math.max(1, math.min(total_p, saved_p_view.lnum or 1))
+    saved_p_view.topline = math.max(1, math.min(total_p, saved_p_view.topline or 1))
+    pcall(vim.api.nvim_win_call, preview_win, function()
+      vim.fn.winrestview(saved_p_view)
+    end)
+  end
 
   vim.api.nvim_buf_clear_namespace(preview_buf, NS_ID, 0, -1)
 
@@ -1086,7 +1104,16 @@ function M.refresh()
     end
   end
 
-  M.sync_scroll()
+  local cur_win = vim.api.nvim_get_current_win()
+  local s_win = nil
+  if source_win and vim.api.nvim_win_is_valid(source_win) and vim.api.nvim_win_get_buf(source_win) == source_buf then
+    s_win = source_win
+  end
+  if s_win and cur_win == s_win then
+    M.sync_from_source()
+  elseif cur_win == preview_win then
+    M.sync_from_preview()
+  end
 end
 
 function M.debounced_refresh()
@@ -1228,6 +1255,41 @@ function M.get_active_source_line()
   return 1
 end
 
+function M.is_auto_refresh_enabled()
+  local p_opts = (config.options and config.options.preview_pane) or {}
+  return p_opts.auto_refresh ~= false
+end
+
+function M.get_auto_refresh_interval()
+  local p_opts = (config.options and config.options.preview_pane) or {}
+  local ms = tonumber(p_opts.auto_refresh_interval) or 1000
+  return math.max(200, math.floor(ms))
+end
+
+local function get_auto_refresh_label()
+  if M.is_auto_refresh_enabled() then
+    local ms = M.get_auto_refresh_interval()
+    if ms % 1000 == 0 then
+      return string.format("Auto:%ds(a)", ms / 1000)
+    else
+      return string.format("Auto:%dms(a)", ms)
+    end
+  end
+  return "Auto:Off(a)"
+end
+
+local function is_lines_equal(a, b)
+  if #a ~= #b then
+    return false
+  end
+  for i = 1, #a do
+    if a[i] ~= b[i] then
+      return false
+    end
+  end
+  return true
+end
+
 local function update_winbar()
   if not M.is_open() then
     return
@@ -1240,19 +1302,228 @@ local function update_winbar()
   end
   local editor_visible = M.is_editor_visible()
   local mode_badge = editor_visible and get_sync_label() or "Reader Mode (Editor Hidden)"
+  local auto_badge = get_auto_refresh_label()
   local edit_hint = editor_visible and "e: Hide Editor | <CR>/2-Click: Focus Edit" or "e/<CR>/2-Click: Show Editor"
   pcall(
     vim.api.nvim_set_option_value,
     "winbar",
     string.format(
-      " 󰍔 SuperMarkdown Preview — %s [%s | t: TOC | T: Picker | %s | q: Close] ",
+      " 󰍔 SuperMarkdown Preview — %s [%s | %s | t: TOC | T: Picker | %s | q: Close] ",
       src_name,
       mode_badge,
+      auto_badge,
       edit_hint
     ),
     { win = preview_win }
   )
 end
+
+--- Check tracked markdown buffers for external/AI disk edits and refresh visual mode, preview pane, and TOC sidebar
+function M.check_and_refresh_buffers(force)
+  local target_bufs = {}
+  local seen = {}
+  local function add_buf(b)
+    if b and vim.api.nvim_buf_is_valid(b) and not seen[b] then
+      seen[b] = true
+      table.insert(target_bufs, b)
+    end
+  end
+
+  add_buf(source_buf)
+  pcall(function()
+    local sb = require("super-markdown.toc.sidebar")
+    add_buf(sb.get_source_buf())
+  end)
+  for _, w in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_is_valid(w) then
+      local b = vim.api.nvim_win_get_buf(w)
+      if vim.api.nvim_buf_is_valid(b) then
+        local ft = vim.bo[b].filetype
+        if ft == "markdown" or ft == "md" or ft == "markdown.mdx" then
+          add_buf(b)
+        end
+      end
+    end
+  end
+
+  local mode = vim.api.nvim_get_mode().mode
+  local in_insert = mode:match("^[iR]") ~= nil
+
+  for _, buf in ipairs(target_bufs) do
+    local filepath = vim.api.nvim_buf_get_name(buf)
+    local state = file_watch_state[buf]
+    if not state then
+      state = { mtime_key = nil, tick = vim.api.nvim_buf_get_changedtick(buf) }
+      file_watch_state[buf] = state
+    end
+
+    local disk_changed = false
+    if filepath and filepath ~= "" and vim.bo[buf].buftype == "" then
+      local stat = vim.uv.fs_stat(filepath)
+      if stat and stat.mtime then
+        local mtime_key = tostring(stat.mtime.sec) .. ":" .. tostring(stat.mtime.nsec or 0) .. ":" .. tostring(stat.size or 0)
+        local is_first_check = (state.mtime_key == nil)
+        if is_first_check then
+          state.mtime_key = mtime_key
+        elseif state.mtime_key ~= mtime_key then
+          state.mtime_key = mtime_key
+          disk_changed = true
+        end
+
+        if (disk_changed or is_first_check or force) and not vim.bo[buf].modified and not in_insert then
+          pcall(function()
+            vim.bo[buf].autoread = true
+          end)
+          if disk_changed or force then
+            pcall(vim.cmd, "silent! checktime " .. buf)
+          end
+
+          -- Direct disk comparison & reload for hidden buffers (Reader Mode) or sub-second AI writes
+          local ok_r, disk_lines = pcall(vim.fn.readfile, filepath)
+          if ok_r and type(disk_lines) == "table" then
+            local cur_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+            if not is_lines_equal(cur_lines, disk_lines) then
+              local win_views = {}
+              for _, w in ipairs(vim.api.nvim_list_wins()) do
+                if vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w) == buf then
+                  pcall(function()
+                    win_views[w] = vim.api.nvim_win_call(w, vim.fn.winsaveview)
+                  end)
+                end
+              end
+              pcall(vim.api.nvim_buf_set_lines, buf, 0, -1, false, disk_lines)
+              pcall(function()
+                vim.bo[buf].modified = false
+              end)
+              local new_total = math.max(1, #disk_lines)
+              for w, v in pairs(win_views) do
+                if vim.api.nvim_win_is_valid(w) then
+                  v.lnum = math.max(1, math.min(new_total, v.lnum or 1))
+                  v.topline = math.max(1, math.min(new_total, v.topline or 1))
+                  pcall(vim.api.nvim_win_call, w, function()
+                    vim.fn.winrestview(v)
+                  end)
+                end
+              end
+              disk_changed = true
+            end
+          end
+        end
+      end
+    end
+
+    local new_tick = vim.api.nvim_buf_get_changedtick(buf)
+    local buf_changed = (new_tick ~= state.tick)
+    state.tick = new_tick
+
+    if disk_changed or buf_changed or force then
+      -- 1. Update in-buffer visual mode & folds
+      pcall(function()
+        local r = require("super-markdown.render")
+        if r.is_enabled(buf) then
+          r.render(buf)
+        end
+      end)
+      pcall(function()
+        local f = require("super-markdown.folds")
+        if f.refresh then
+          f.refresh(buf)
+        end
+      end)
+      -- 2. Update Live Preview Pane if watching this buffer
+      if M.is_open() and source_buf == buf then
+        M.refresh()
+      end
+      -- 3. Update TOC Sidebar if watching this buffer
+      pcall(function()
+        local sb = require("super-markdown.toc.sidebar")
+        if sb.is_open() and sb.get_source_buf() == buf then
+          sb.refresh()
+        end
+      end)
+    end
+  end
+end
+
+function M.stop_auto_refresh()
+  if auto_refresh_timer then
+    pcall(function()
+      auto_refresh_timer:stop()
+      auto_refresh_timer:close()
+    end)
+    auto_refresh_timer = nil
+  end
+end
+
+function M.start_auto_refresh()
+  M.stop_auto_refresh()
+  if not M.is_auto_refresh_enabled() then
+    return
+  end
+  local interval = M.get_auto_refresh_interval()
+  auto_refresh_timer = vim.uv.new_timer()
+  auto_refresh_timer:start(
+    interval,
+    interval,
+    vim.schedule_wrap(function()
+      if not M.is_auto_refresh_enabled() then
+        M.stop_auto_refresh()
+        return
+      end
+      M.check_and_refresh_buffers(false)
+    end)
+  )
+end
+
+--- Toggle or configure interval auto-refresh: nil/"toggle", "on"/"off", or interval in ms (e.g. 500, 1000)
+function M.set_auto_refresh(arg)
+  config.options.preview_pane = config.options.preview_pane or {}
+  local p_opts = config.options.preview_pane
+
+  if arg == nil or arg == "" or arg == "toggle" then
+    p_opts.auto_refresh = not M.is_auto_refresh_enabled()
+  elseif type(arg) == "boolean" then
+    p_opts.auto_refresh = arg
+  elseif tonumber(arg) then
+    p_opts.auto_refresh_interval = math.max(200, math.floor(tonumber(arg)))
+    p_opts.auto_refresh = true
+  elseif type(arg) == "string" then
+    local s = arg:lower()
+    if s == "on" or s == "true" or s == "enable" or s == "1" then
+      p_opts.auto_refresh = true
+    elseif s == "off" or s == "false" or s == "disable" or s == "0" then
+      p_opts.auto_refresh = false
+    else
+      vim.notify(
+        "SuperMarkdown: Invalid auto_refresh option '" .. tostring(arg) .. "' (use: on, off, toggle, or interval ms like 1000)",
+        vim.log.levels.WARN
+      )
+      return
+    end
+  end
+
+  if p_opts.auto_refresh then
+    M.start_auto_refresh()
+    M.check_and_refresh_buffers(true)
+    vim.notify(
+      string.format("SuperMarkdown: Auto-Refresh Enabled (%dms) — Visual, Preview & Sidebar 󰑐", M.get_auto_refresh_interval()),
+      vim.log.levels.INFO
+    )
+  else
+    M.stop_auto_refresh()
+    vim.notify("SuperMarkdown: Auto-Refresh Disabled 󰄱", vim.log.levels.INFO)
+  end
+
+  update_winbar()
+  pcall(function()
+    local sb = require("super-markdown.toc.sidebar")
+    if sb.is_open() then
+      sb.refresh()
+    end
+  end)
+end
+
+M.toggle_auto_refresh = M.set_auto_refresh
 
 --- Set or cycle scroll synchronization mode: "both", "source", "preview", "off", or nil to cycle
 function M.set_sync(mode)
@@ -1691,9 +1962,19 @@ function M.open(opts)
     bmap("n", "q", M.close, "Close Live Preview Pane")
     bmap("n", "Q", M.close, "Close Live Preview Pane")
     bmap("n", "<Esc>", M.close, "Close Live Preview Pane")
-    bmap("n", "r", M.refresh, "Refresh Live Preview Pane")
+    bmap("n", "r", function()
+      M.check_and_refresh_buffers(true)
+    end, "Refresh Live Preview Pane & Check Disk Changes")
+    bmap("n", "a", function()
+      M.set_auto_refresh("toggle")
+    end, "Toggle Interval Auto-Refresh (Disk / Visual / Preview / Sidebar)")
     bmap("n", "m", "<Nop>", "Disable accidental mark creation in Preview Pane")
     local km = (config.options and config.options.keymaps) or {}
+    if km.auto_refresh and km.auto_refresh ~= "" then
+      bmap("n", km.auto_refresh, function()
+        M.set_auto_refresh("toggle")
+      end, "Toggle Interval Auto-Refresh")
+    end
     local toggle_lhs = km.preview_pane
     if toggle_lhs and toggle_lhs ~= "" then
       bmap("n", toggle_lhs, M.toggle, "Toggle Live Preview Pane")
@@ -1787,14 +2068,25 @@ function M.open(opts)
       require("super-markdown.render").render(source_buf)
     end)
   end
+  if M.is_auto_refresh_enabled() then
+    M.start_auto_refresh()
+  end
 
   -- Attach bidirectional live-sync autocommands on source and preview buffers/windows
   augroup_id = vim.api.nvim_create_augroup("SuperMarkdownPreviewPane_" .. source_buf, { clear = true })
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWritePost" }, {
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
     group = augroup_id,
     buffer = source_buf,
     callback = function()
       M.debounced_refresh()
+    end,
+  })
+  vim.api.nvim_create_autocmd("FocusGained", {
+    group = augroup_id,
+    callback = function()
+      if M.is_auto_refresh_enabled() then
+        M.check_and_refresh_buffers(false)
+      end
     end,
   })
   vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
