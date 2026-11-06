@@ -59,22 +59,39 @@ local LEXICAL_TYPES = {
   ["TIMESTAMP"] = true, ["SERIAL"] = true, ["UUID"] = true, ["JSONB"] = true,
 }
 
-local function has_treesitter_parser(lang)
+local function has_treesitter_injection(bufnr, lang)
   if not lang or lang == "" then return false end
   local ts_lang = TS_LANG_ALIASES[lang] or lang
-  if vim.treesitter and vim.treesitter.language and vim.treesitter.language.add then
-    local ok, res = pcall(vim.treesitter.language.add, ts_lang)
-    if ok and res ~= false then
-      return true
+  -- Verify Treesitter highlighter is actively running on this markdown buffer
+  if not (vim.treesitter and vim.treesitter.highlighter and vim.treesitter.highlighter.active and vim.treesitter.highlighter.active[bufnr]) then
+    return false
+  end
+  -- Verify markdown injection query exists
+  local ok_inj, inj_q = pcall(vim.treesitter.query.get, "markdown", "injections")
+  if not ok_inj or not inj_q then
+    return false
+  end
+  -- Verify target language parser AND its highlights.scm query exist
+  if vim.treesitter.language and vim.treesitter.language.add then
+    local ok_add, res = pcall(vim.treesitter.language.add, ts_lang)
+    if not ok_add or res == false then
+      return false
+    end
+  else
+    local ok_p, parser = pcall(vim.treesitter.get_string_parser, "", ts_lang)
+    if not ok_p or not parser then
+      return false
     end
   end
-  local ok_p, parser = pcall(vim.treesitter.get_string_parser, "", ts_lang)
-  return ok_p and parser ~= nil
+  local ok_hq, hq = pcall(vim.treesitter.query.get, ts_lang, "highlights")
+  return ok_hq and hq ~= nil
 end
 
 local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
   local n = #line
   if n == 0 then return end
+  -- Priority 115 ensures lexical tokens render above @markup.raw.block.markdown (priority 100)
+  local lex_prio = 115
 
   local c_start = nil
   if lang == "lua" or lang == "sql" then
@@ -107,7 +124,7 @@ local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
       pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, idx - 1, {
         end_col = math.min(j - 1, code_end),
         hl_group = "SuperMarkdownMermaidString",
-        priority = 95,
+        priority = lex_prio,
       })
       idx = j
     elseif ch == "@" and line:sub(idx + 1, idx + 1):match("[%a_]") then
@@ -116,7 +133,7 @@ local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
         pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, idx - 1, {
           end_col = math.min(ann_e, code_end),
           hl_group = "SuperMarkdownMermaidNodeId",
-          priority = 95,
+          priority = lex_prio,
         })
         idx = ann_e + 1
       else
@@ -128,7 +145,7 @@ local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
         pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, idx - 1, {
           end_col = math.min(num_e, code_end),
           hl_group = "SuperMarkdownMermaidNumber",
-          priority = 95,
+          priority = lex_prio,
         })
         idx = num_e + 1
       else
@@ -152,10 +169,22 @@ local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
           pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, idx - 1, {
             end_col = id_e,
             hl_group = hl,
-            priority = 95,
+            priority = lex_prio,
           })
         end
         idx = id_e + 1
+      else
+        idx = idx + 1
+      end
+    elseif ch:match("[=%+%-%*/<>!&|:]") then
+      local _, op_e = line:find("^[=%+%-%*/<>!&|:]+", idx)
+      if op_e then
+        pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, idx - 1, {
+          end_col = math.min(op_e, code_end),
+          hl_group = "SuperMarkdownMermaidArrow",
+          priority = lex_prio,
+        })
+        idx = op_e + 1
       else
         idx = idx + 1
       end
@@ -168,7 +197,7 @@ local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, c_start - 1, {
       end_col = n,
       hl_group = "SuperMarkdownMermaidComment",
-      priority = 95,
+      priority = lex_prio,
     })
   end
 end
@@ -228,7 +257,7 @@ function M.render(bufnr, ns_id, lnum, line, in_codeblock, opts)
       lang = lang_clean,
       indent = indent,
       fence_type = fence_type,
-      use_lexical = (lang_clean ~= "" and lang_clean ~= "mermaid" and not has_treesitter_parser(lang_clean)),
+      use_lexical = (lang_clean ~= "" and lang_clean ~= "mermaid" and not has_treesitter_injection(bufnr, lang_clean)),
     }
   end
 

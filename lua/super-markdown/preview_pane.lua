@@ -292,7 +292,8 @@ local LEXICAL_LITERALS = {
 
 local LEXICAL_TYPES = {
   ["string"] = true, ["number"] = true, ["boolean"] = true, ["table"] = true, ["any"] = true,
-  ["void"] = true, ["int"] = true, ["float"] = true, ["double"] = true, ["char"] = true,
+  ["void"] = true, ["int"] = true, ["long"] = true, ["short"] = true, ["byte"] = true,
+  ["float"] = true, ["double"] = true, ["char"] = true,
   ["bool"] = true, ["usize"] = true, ["isize"] = true, ["u8"] = true, ["u16"] = true,
   ["u32"] = true, ["u64"] = true, ["i8"] = true, ["i16"] = true, ["i32"] = true, ["i64"] = true,
   ["f32"] = true, ["f64"] = true, ["str"] = true, ["String"] = true, ["Vec"] = true,
@@ -348,8 +349,16 @@ local function highlight_code_line_lexical(line, lang)
       end
       table.insert(spans, { idx - 1, math.min(j - 1, code_end), "SuperMarkdownMermaidString" })
       idx = j
+    elseif ch == "@" and line:sub(idx + 1, idx + 1):match("[%a_]") then
+      local _, ann_e = line:find("^@[%a_][%w_]*", idx)
+      if ann_e then
+        table.insert(spans, { idx - 1, math.min(ann_e, code_end), "SuperMarkdownMermaidNodeId" })
+        idx = ann_e + 1
+      else
+        idx = idx + 1
+      end
     elseif ch:match("%d") and (idx == 1 or not line:sub(idx - 1, idx - 1):match("[%w_]")) then
-      local _, num_e = line:find("^[%da-fA-FxX%.]+", idx)
+      local _, num_e = line:find("^[%da-fA-FxX%.L]+", idx)
       if num_e then
         table.insert(spans, { idx - 1, math.min(num_e, code_end), "SuperMarkdownMermaidNumber" })
         idx = num_e + 1
