@@ -55,6 +55,9 @@ function M.clear(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   if vim.api.nvim_buf_is_valid(bufnr) then
     vim.api.nvim_buf_clear_namespace(bufnr, NS_ID, 0, -1)
+    if mermaid.get_namespace then
+      vim.api.nvim_buf_clear_namespace(bufnr, mermaid.get_namespace(), 0, -1)
+    end
   end
 end
 
@@ -72,8 +75,11 @@ function M.render(bufnr)
     pcall(vim.api.nvim_set_option_value, "concealcursor", r_opts.concealcursor or "c", { win = win })
   end
 
-  -- Clear previous decorations
+  -- Clear previous decorations (both render and standalone mermaid namespaces)
   vim.api.nvim_buf_clear_namespace(bufnr, NS_ID, 0, -1)
+  if mermaid.get_namespace then
+    vim.api.nvim_buf_clear_namespace(bufnr, mermaid.get_namespace(), 0, -1)
+  end
 
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local line_count = #lines

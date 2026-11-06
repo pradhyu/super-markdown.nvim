@@ -53,8 +53,8 @@ function M.setup(user_opts)
         folds.attach(bufnr)
       end
 
-      -- Render mermaid block status indicators
-      if config.options.mermaid.enabled then
+      -- Render mermaid block status indicators when full buffer render is disabled
+      if config.options.mermaid.enabled and not config.options.render.enabled then
         mermaid.render_status(bufnr)
         vim.api.nvim_create_autocmd({ "TextChanged", "BufEnter" }, {
           buffer = bufnr,

@@ -139,9 +139,9 @@ local function parse_node(str)
   if rest:match("^%[%((.*)%)]$") then
     shape = "database"
     inner = rest:match("^%[%((.*)%)]$")
-  elseif rest:match("^%(%[(.*)%)]$") then
+  elseif rest:match("^%(%[(.*)%]%)$") then
     shape = "stadium"
-    inner = rest:match("^%(%[(.*)%)]$")
+    inner = rest:match("^%(%[(.*)%]%)$")
   elseif rest:match("^%(%((.*)%)%)$") then
     shape = "circle"
     inner = rest:match("^%(%((.*)%)%)$")
@@ -677,6 +677,49 @@ local function parse_flowchart_statement(line)
   return tokens
 end
 
+--- Split a raw line on top-level semicolons `;` (outside quotes and brackets)
+local function split_semicolon_statements(raw)
+  local parts = {}
+  local len = #raw
+  local i = 1
+  local depth = 0
+  local in_quote = nil
+  local start_i = 1
+  while i <= len do
+    local ch = raw:sub(i, i)
+    if in_quote then
+      if ch == "\\" then
+        i = i + 2
+      elseif ch == in_quote then
+        in_quote = nil
+        i = i + 1
+      else
+        i = i + 1
+      end
+    else
+      if ch == '"' or ch == "'" then
+        in_quote = ch
+      elseif ch == "[" or ch == "(" or ch == "{" then
+        depth = depth + 1
+      elseif ch == "]" or ch == ")" or ch == "}" then
+        depth = math.max(0, depth - 1)
+      elseif ch == ";" and depth == 0 then
+        local seg = vim.trim(raw:sub(start_i, i - 1))
+        if seg ~= "" then
+          table.insert(parts, seg)
+        end
+        start_i = i + 1
+      end
+      i = i + 1
+    end
+  end
+  local last = vim.trim(raw:sub(start_i))
+  if last ~= "" then
+    table.insert(parts, last)
+  end
+  return parts
+end
+
 --- Split `A & B` at bracket/quote depth 0
 local function split_ampersand_nodes(raw)
   local parts = {}
@@ -877,7 +920,14 @@ local function render_flowchart(code, opts, custom_title)
     in_deg[v] = (in_deg[v] or 0) + 1
   end
 
+  local stmt_lines = {}
   for _, raw in ipairs(raw_lines) do
+    for _, sub_stmt in ipairs(split_semicolon_statements(raw)) do
+      table.insert(stmt_lines, sub_stmt)
+    end
+  end
+
+  for _, raw in ipairs(stmt_lines) do
     local line = vim.trim(raw)
     if
       line == ""
@@ -894,7 +944,7 @@ local function render_flowchart(code, opts, custom_title)
       -- skip directives
     elseif line:match("^subgraph%s+") then
       local sg_rest = vim.trim(line:gsub("^subgraph%s+", ""))
-      local _, sg_bracket = sg_rest:match("^([%w_%-]+)%s*%[(.*)%]$")
+      local _, sg_bracket = sg_rest:match("^([%w_%-%s]+)%s*%[(.*)%]$")
       local sg_title = sg_bracket or sg_rest
       local clean_sg = table.concat(clean_label_lines(sg_title), " ")
       if clean_sg == "" then
@@ -1156,7 +1206,7 @@ local function render_flowchart(code, opts, custom_title)
   local avail_w = math.max(46, max_width - 6)
   local gap_w = 3
 
-  -- Split any wide layer into visual sub-rows of at most `max_cols_per_row` nodes so boxes stay readable
+  -- Split any wide layer into visual sub-rows of at most `max_cols` nodes, keeping subgraphs partitioned cleanly
   local visual_rows = {} -- list of { rank = r, ids = { ... }, subgraph = ... }
   for r = 1, max_rank do
     local l_nodes = layers[r] or {}
@@ -1169,13 +1219,24 @@ local function render_flowchart(code, opts, custom_title)
       elseif avail_w >= 96 then
         max_cols = 5
       end
-      for i = 1, #l_nodes, max_cols do
-        local chunk = {}
-        for j = i, math.min(#l_nodes, i + max_cols - 1) do
-          table.insert(chunk, l_nodes[j])
+      -- Group contiguous nodes in `l_nodes` that share the same subgraph
+      local sg_runs = {}
+      for _, id in ipairs(l_nodes) do
+        local sg = node_subgraph[id]
+        if #sg_runs == 0 or sg_runs[#sg_runs].sg ~= sg then
+          table.insert(sg_runs, { sg = sg, ids = { id } })
+        else
+          table.insert(sg_runs[#sg_runs].ids, id)
         end
-        local sg = node_subgraph[chunk[1]]
-        table.insert(visual_rows, { rank = r, ids = chunk, subgraph = sg })
+      end
+      for _, run in ipairs(sg_runs) do
+        for i = 1, #run.ids, max_cols do
+          local chunk = {}
+          for j = i, math.min(#run.ids, i + max_cols - 1) do
+            table.insert(chunk, run.ids[j])
+          end
+          table.insert(visual_rows, { rank = r, ids = chunk, subgraph = run.sg })
+        end
       end
     end
   end
@@ -1365,9 +1426,9 @@ local function render_flowchart(code, opts, custom_title)
             local is_p = (x == p_cx)
             local is_c = child_x_set[x] == true
             if is_p and is_c then
-              bar:put(x, "┼")
+              bar:put(x, (min_x == max_x and "│") or (x == min_x and "├") or (x == max_x and "┤") or "┼")
             elseif is_p then
-              bar:put(x, (x == min_x and "╭") or (x == max_x and "╮") or "┴")
+              bar:put(x, (x == min_x and "╰") or (x == max_x and "╯") or "┴")
             elseif is_c then
               bar:put(x, (x == min_x and "╭") or (x == max_x and "╮") or "┬")
             end
@@ -1436,7 +1497,7 @@ local function render_flowchart(code, opts, custom_title)
             local is_u = parent_x_set[x] == true
             local is_t = (x == t_cx)
             if is_u and is_t then
-              bar:put(x, "┼")
+              bar:put(x, (min_x == max_x and "│") or (x == min_x and "├") or (x == max_x and "┤") or "┼")
             elseif is_u then
               bar:put(x, (x == min_x and "╰") or (x == max_x and "╯") or "┴")
             elseif is_t then
@@ -1499,7 +1560,7 @@ local function render_flowchart(code, opts, custom_title)
             end
             for x = min_x, max_x do
               if u_set[x] and v_set[x] then
-                bar:put(x, "┼")
+                bar:put(x, (min_x == max_x and "│") or (x == min_x and "├") or (x == max_x and "┤") or "┼")
               elseif u_set[x] then
                 bar:put(x, (x == min_x and "╰") or (x == max_x and "╯") or "┴")
               elseif v_set[x] then
@@ -1507,6 +1568,31 @@ local function render_flowchart(code, opts, custom_title)
               end
             end
             table.insert(out, bar:tostring())
+
+            -- Render edge labels over target columns if present
+            local has_any_lbl = false
+            for vi = 1, #v_ids do
+              if v_edge_label[vi] and v_edge_label[vi] ~= "" then
+                has_any_lbl = true
+                break
+              end
+            end
+            if has_any_lbl then
+              local lbl_line = make_canvas_line(canvas_w)
+              for vi = 1, #v_ids do
+                if v_has_in[vi] then
+                  local cx = next_rr.centers[vi]
+                  local el = v_edge_label[vi]
+                  if el and el ~= "" then
+                    local tag = "[" .. truncate_str(el, 14) .. "]"
+                    lbl_line:put(math.max(0, cx - math.floor(str_width(tag) / 2)), tag)
+                  else
+                    lbl_line:put(cx, "│")
+                  end
+                end
+              end
+              table.insert(out, lbl_line:tostring())
+            end
 
             local arr = make_canvas_line(canvas_w)
             for vx, _ in pairs(v_set) do
@@ -1516,8 +1602,28 @@ local function render_flowchart(code, opts, custom_title)
           end
         end
       else
-        -- Visual sub-rows of the same rank or disconnected components: add a subtle vertical gap
-        table.insert(out, "")
+        -- Visual sub-rows of the same rank or branch continuation from an earlier parent row
+        local incoming_from_earlier = {}
+        for vi, v in ipairs(v_ids) do
+          for _, p in ipairs(dag_parents[v] or {}) do
+            table.insert(incoming_from_earlier, { vi = vi, from = p.from, label = p.label or "" })
+          end
+        end
+        if #incoming_from_earlier > 0 then
+          local stem = make_canvas_line(canvas_w)
+          local arr = make_canvas_line(canvas_w)
+          for _, inc in ipairs(incoming_from_earlier) do
+            local cx = next_rr.centers[inc.vi]
+            local from_lbl = nodes[inc.from] and nodes[inc.from].label:gsub("\n", " ") or inc.from
+            local el = (inc.label ~= "") and ("[" .. truncate_str(inc.label, 14) .. "] ") or ""
+            stem:put(cx, "│ " .. el .. "(from " .. truncate_str(from_lbl, 20) .. ")")
+            arr:put(cx, "▼")
+          end
+          table.insert(out, stem:tostring())
+          table.insert(out, arr:tostring())
+        else
+          table.insert(out, "")
+        end
       end
     end
   end
@@ -1539,7 +1645,14 @@ local function render_state(code, opts)
   local state_labels = {}
   local end_counter = 0
 
+  local stmt_lines = {}
   for _, raw in ipairs(raw_lines) do
+    for _, sub_stmt in ipairs(split_semicolon_statements(raw)) do
+      table.insert(stmt_lines, sub_stmt)
+    end
+  end
+
+  for _, raw in ipairs(stmt_lines) do
     local line = vim.trim(raw)
     if line == "" or line:match("^%%") or line:match("^stateDiagram") or line:match("^direction%s+") then
       -- skip
@@ -1845,7 +1958,283 @@ local function render_pie(code, opts)
 end
 
 -- =========================================================================
--- 7. MULTI-COLOR LINE TOKENIZER FOR IN-BUFFER & POPUP RENDERING
+-- 7. GANTT, MINDMAP, GITGRAPH, TIMELINE / JOURNEY & XYCHART RENDERERS
+-- =========================================================================
+local function render_gantt(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Gantt Timeline (Live)"
+  local sections = {}
+  local cur_sec = { name = "Schedule", tasks = {} }
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^gantt") or line:match("^dateFormat") or line:match("^axisFormat") or line:match("^excludes") then
+      -- skip
+    elseif line:match("^title%s+(.+)$") then
+      title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
+    elseif line:match("^section%s+(.+)$") then
+      if #cur_sec.tasks > 0 then
+        table.insert(sections, cur_sec)
+      end
+      cur_sec = { name = vim.trim(line:match("^section%s+(.+)$")), tasks = {} }
+    else
+      local task_name, meta = line:match("^([^:]+):%s*(.+)$")
+      if task_name and meta then
+        local m_low = meta:lower()
+        local status = "planned"
+        if m_low:find("done") then
+          status = "done"
+        elseif m_low:find("active") then
+          status = "active"
+        elseif m_low:find("crit") then
+          status = "crit"
+        elseif m_low:find("milestone") then
+          status = "milestone"
+        end
+        table.insert(cur_sec.tasks, {
+          name = vim.trim(task_name),
+          status = status,
+          meta = vim.trim(meta),
+        })
+      end
+    end
+  end
+  if #cur_sec.tasks > 0 then
+    table.insert(sections, cur_sec)
+  end
+
+  if #sections == 0 then
+    return frame_diagram({ "(Empty Gantt chart)" }, title, opts)
+  end
+
+  local out = {}
+  local task_idx = 0
+  for _, sec in ipairs(sections) do
+    table.insert(out, "  ╭┈┈ 󰉋 " .. sec.name .. " ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈╮")
+    for _, t in ipairs(sec.tasks) do
+      task_idx = task_idx + 1
+      local icon = (t.status == "done" and "󰄵")
+        or (t.status == "active" and "󰄰")
+        or (t.status == "crit" and "󰀦")
+        or (t.status == "milestone" and "◆")
+        or "󰄱"
+      local offset = ((task_idx - 1) * 3) % 15
+      local bar_char = (t.status == "done" and "█") or (t.status == "active" and "▓") or "▒"
+      local bar = string.rep("·", offset) .. string.rep(bar_char, 8) .. string.rep("·", math.max(0, 16 - offset))
+      table.insert(
+        out,
+        string.format("  │ %s %-26s │%s│ [%s]", icon, truncate_str(t.name, 26), bar, truncate_str(t.meta, 22))
+      )
+    end
+    table.insert(out, "  ╰┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈╯")
+  end
+
+  return frame_diagram(out, title, opts)
+end
+
+local function render_mindmap(code, opts)
+  opts = opts or {}
+  local items = {}
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    if not raw:match("^%s*$") and not raw:match("^%s*%%%%") and not raw:match("^%s*mindmap") then
+      local indent = #(raw:match("^(%s*)") or "")
+      local txt = vim.trim(raw)
+      -- Strip mindmap node wrappers like root((Text)), (Text), [Text], {{Text}}
+      txt = txt:gsub("^[%w_%-]*%(%((.-)%)%)$", "%1")
+      txt = txt:gsub("^[%w_%-]*%[(.-)%]$", "%1")
+      txt = txt:gsub("^[%w_%-]*%((.-)%)$", "%1")
+      txt = txt:gsub("^[%w_%-]*%{%{(.-)%}%}$", "%1")
+      table.insert(items, { indent = indent, text = vim.trim(txt) })
+    end
+  end
+
+  if #items == 0 then
+    return frame_diagram({ "(Empty mindmap)" }, "󰡷 Mermaid Mindmap", opts)
+  end
+
+  local base_indent = items[1].indent
+  local out = {}
+  for i, it in ipairs(items) do
+    local depth = math.max(0, math.floor((it.indent - base_indent) / 2))
+    if i == 1 then
+      local b = make_box("root", "rounded", "◉ " .. it.text, 44)
+      for _, bl in ipairs(b.lines) do
+        table.insert(out, "  " .. bl)
+      end
+    else
+      local prefix = "  " .. string.rep("  │ ", math.max(0, depth - 1))
+      local is_last_at_depth = true
+      for j = i + 1, #items do
+        local d_j = math.max(0, math.floor((items[j].indent - base_indent) / 2))
+        if d_j < depth then
+          break
+        elseif d_j == depth then
+          is_last_at_depth = false
+          break
+        end
+      end
+      local branch = is_last_at_depth and "  ╰──▶ " or "  ├──▶ "
+      table.insert(out, prefix .. branch .. "[" .. it.text .. "]")
+    end
+  end
+
+  return frame_diagram(out, "󰡷 Mermaid Mindmap (Live)", opts)
+end
+
+local function render_gitgraph(code, opts)
+  opts = opts or {}
+  local branches = { "main" }
+  local b_idx = { main = 1 }
+  local cur_b = "main"
+  local events = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^gitGraph") then
+      -- skip
+    elseif line:match("^branch%s+([%w_%-/%.]+)") then
+      local b = line:match("^branch%s+([%w_%-/%.]+)")
+      if not b_idx[b] then
+        table.insert(branches, b)
+        b_idx[b] = #branches
+      end
+      cur_b = b
+      table.insert(events, { type = "branch", branch = b })
+    elseif line:match("^checkout%s+([%w_%-/%.]+)") or line:match("^switch%s+([%w_%-/%.]+)") then
+      local b = line:match("^%w+%s+([%w_%-/%.]+)")
+      if not b_idx[b] then
+        table.insert(branches, b)
+        b_idx[b] = #branches
+      end
+      cur_b = b
+    elseif line:match("^merge%s+([%w_%-/%.]+)") then
+      local from_b = line:match("^merge%s+([%w_%-/%.]+)")
+      local tag = line:match('tag:%s*"([^"]+)"')
+      table.insert(events, { type = "merge", from = from_b, to = cur_b, tag = tag })
+    elseif line:match("^commit") then
+      local id = line:match('id:%s*"([^"]+)"')
+      local tag = line:match('tag:%s*"([^"]+)"')
+      table.insert(events, { type = "commit", branch = cur_b, id = id, tag = tag })
+    end
+  end
+
+  local out = {}
+  local header_parts = {}
+  for _, b in ipairs(branches) do
+    table.insert(header_parts, "[" .. b .. "]")
+  end
+  table.insert(out, "  Branches: " .. table.concat(header_parts, "  "))
+  table.insert(out, "")
+
+  for _, ev in ipairs(events) do
+    local lanes = {}
+    local active_lane = b_idx[ev.branch or ev.to or "main"] or 1
+    local from_lane = ev.from and b_idx[ev.from] or nil
+    for i = 1, #branches do
+      if i == active_lane then
+        lanes[i] = (ev.type == "merge") and "◉" or "●"
+      elseif from_lane and i == from_lane then
+        lanes[i] = "╰"
+      else
+        lanes[i] = "│"
+      end
+    end
+    local lane_str = "  " .. table.concat(lanes, " ── ")
+    local desc
+    if ev.type == "branch" then
+      desc = string.format("  ╭─ branch '%s'", ev.branch)
+    elseif ev.type == "merge" then
+      desc = string.format("  ◀─ merge '%s' into '%s'%s", ev.from, ev.to, ev.tag and (" [" .. ev.tag .. "]") or "")
+    else
+      desc = string.format(
+        "  (%s)%s%s",
+        ev.branch,
+        ev.id and (" " .. ev.id) or " commit",
+        ev.tag and (" [" .. ev.tag .. "]") or ""
+      )
+    end
+    table.insert(out, lane_str .. desc)
+  end
+
+  return frame_diagram(out, "󰡷 Mermaid GitGraph (Live)", opts)
+end
+
+local function render_timeline(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Timeline / Journey (Live)"
+  local out = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^timeline") or line:match("^journey") then
+      -- skip
+    elseif line:match("^title%s+(.+)$") then
+      title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
+    elseif line:match("^section%s+(.+)$") then
+      table.insert(out, "  ╭┈┈ 󰉋 " .. vim.trim(line:match("^section%s+(.+)$")) .. " ┈┈┈┈┈┈┈┈┈┈┈┈┈┈╮")
+    else
+      local k, v = line:match("^([^:]+):%s*(.+)$")
+      if k and v then
+        table.insert(out, string.format("    ◉ [%s] ──▶ %s", vim.trim(k), vim.trim(v)))
+      else
+        table.insert(out, "    • " .. line)
+      end
+    end
+  end
+
+  if #out == 0 then
+    out = { "(Empty timeline)" }
+  end
+  return frame_diagram(out, title, opts)
+end
+
+local function render_xychart(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid XY Chart (Live)"
+  local labels = {}
+  local values = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    local t = line:match('^title%s+"?([^"]+)"?$')
+    if t then
+      title = "󰡷 " .. vim.trim(t)
+    elseif line:match("^x%-axis%s*%[(.-)%]") then
+      local inner = line:match("^x%-axis%s*%[(.-)%]")
+      for item in inner:gmatch("[^,]+") do
+        local cl = vim.trim(item):gsub('^"(.*)"$', "%1")
+        table.insert(labels, cl)
+      end
+    elseif line:match("^bar%s*%[(.-)%]") or line:match("^line%s*%[(.-)%]") then
+      local inner = line:match("%[(.-)%]")
+      for num in inner:gmatch("[^,]+") do
+        table.insert(values, tonumber(vim.trim(num)) or 0)
+      end
+    end
+  end
+
+  local max_v = 1
+  for _, v in ipairs(values) do
+    if v > max_v then max_v = v end
+  end
+
+  local out = {}
+  local bar_w = 26
+  for i, v in ipairs(values) do
+    local lbl = labels[i] or ("#" .. i)
+    local filled = math.max(1, math.min(bar_w, math.floor((v / max_v) * bar_w + 0.5)))
+    local bar = string.rep("█", filled) .. string.rep("░", bar_w - filled)
+    table.insert(out, string.format("  %-14s │ %s  %s", truncate_str(lbl, 14), bar, tostring(v)))
+  end
+
+  if #out == 0 then
+    out = { "(Empty XY chart)" }
+  end
+  return frame_diagram(out, title, opts)
+end
+
+-- =========================================================================
+-- 8. MULTI-COLOR LINE TOKENIZER FOR IN-BUFFER & POPUP RENDERING
 -- =========================================================================
 function M.tokenize_line(line)
   local chunks = {}
@@ -1936,6 +2325,16 @@ function M.render(mermaid_code, opts)
     return render_er(trimmed, opts)
   elseif trimmed:match("^pie") then
     return render_pie(trimmed, opts)
+  elseif trimmed:match("^gantt") then
+    return render_gantt(trimmed, opts)
+  elseif trimmed:match("^mindmap") then
+    return render_mindmap(trimmed, opts)
+  elseif trimmed:match("^gitGraph") then
+    return render_gitgraph(trimmed, opts)
+  elseif trimmed:match("^timeline") or trimmed:match("^journey") then
+    return render_timeline(trimmed, opts)
+  elseif trimmed:match("^xychart") then
+    return render_xychart(trimmed, opts)
   else
     return render_flowchart(trimmed, opts)
   end

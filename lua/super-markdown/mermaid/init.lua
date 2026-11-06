@@ -9,6 +9,10 @@ M.syntax = syntax
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_mermaid")
 local diagram_cache = {} -- hash -> virt_lines
 
+function M.get_namespace()
+  return NS_ID
+end
+
 function M.get_blocks(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
@@ -81,6 +85,8 @@ function M.render_inline(bufnr, ns_id, opts)
   opts = opts or config.options.mermaid or {}
 
   if not vim.api.nvim_buf_is_valid(bufnr) then return end
+  -- Always clear standalone mermaid namespace so diagrams never duplicate across BufEnter/TextChanged
+  pcall(vim.api.nvim_buf_clear_namespace, bufnr, NS_ID, 0, -1)
   if opts.enabled == false or opts.inline == false then return end
 
   local blocks = M.get_blocks(bufnr)
@@ -147,7 +153,12 @@ function M.render_inline(bufnr, ns_id, opts)
 end
 
 function M.render_status(bufnr)
-  M.render_inline(bufnr)
+  local ok_r, r_mod = pcall(require, "super-markdown.render")
+  if ok_r and r_mod.is_enabled(bufnr) then
+    r_mod.render(bufnr)
+  else
+    M.render_inline(bufnr, NS_ID)
+  end
 end
 
 return M
