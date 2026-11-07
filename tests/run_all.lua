@@ -711,6 +711,125 @@ local st_off = focus_mod.toggle(f_buf, "off")
 assert_eq(st_off, false, "Focus mode disabled via toggle('off')")
 assert_eq(focus_mod.is_enabled(f_buf), false, "is_enabled returns false")
 
+-- 22. Test Git Spec Diff & Eyeballer HUD
+print("\n[Test 22] Git Spec Diff & Eyeballer HUD")
+local diff_mod = require("super-markdown.spec.diff")
+local d_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[d_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(d_buf, 0, -1, false, {
+  "# Spec Under Review",
+  "",
+  "## 1. Authentication",
+  "- [x] Login endpoint",
+  "- [ ] Multi-factor authentication",
+  "",
+  "## 2. API Contract",
+  "GET /api/v1/users",
+})
+vim.api.nvim_win_set_buf(0, d_buf)
+
+local d_hunks, d_stats = diff_mod.compute_diff(d_buf)
+assert_eq(type(d_hunks), "table", "compute_diff returns hunks table")
+assert_eq(type(d_stats), "table", "compute_diff returns stats table")
+
+local d_sec = diff_mod.get_section_diffs(d_buf)
+assert_eq(type(d_sec), "table", "get_section_diffs returns section mapping")
+
+-- Render diff extmarks
+diff_mod.render(d_buf)
+local d_ns = vim.api.nvim_create_namespace("super_markdown_spec_diff")
+assert_eq(type(d_ns), "number", "Diff namespace is valid")
+diff_mod.clear(d_buf)
+local marks_after_clear = vim.api.nvim_buf_get_extmarks(d_buf, d_ns, 0, -1, {})
+assert_eq(#marks_after_clear, 0, "Diff extmarks cleared cleanly")
+
+-- 23. Test Semantic Spec Navigation (Requirements, Questions, Blockers, Tasks)
+print("\n[Test 23] Semantic Spec Navigation (Requirements, Questions, Blockers, Tasks)")
+local nav_mod = require("super-markdown.spec.navigation")
+local nav_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[nav_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(nav_buf, 0, -1, false, {
+  "# Architecture Spec",
+  "",
+  "### REQ-01: User Session Management",
+  "- [x] JWT verification",
+  "- [ ] Refresh token rotation",
+  "- [?] Can sessions be invalidated globally?",
+  "",
+  "> [!CAUTION]",
+  "> High memory footprint with in-memory store",
+  "",
+  "### AC-02: OAuth Provider Integration",
+  "- [!] Missing client secret encryption",
+})
+vim.api.nvim_win_set_buf(0, nav_buf)
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+-- Jump next requirement
+nav_mod.jump_next_requirement(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 3, "Jumped to first requirement REQ-01 (line 3)")
+nav_mod.jump_next_requirement(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 11, "Jumped to second requirement AC-02 (line 11)")
+nav_mod.jump_prev_requirement(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 3, "Jumped back to REQ-01 (line 3)")
+
+-- Jump questions
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+nav_mod.jump_next_question(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 6, "Jumped to open question [?] on line 6")
+
+-- Jump blockers
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+nav_mod.jump_next_blocker(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 8, "Jumped to blocker [!CAUTION] on line 8")
+
+-- Jump pending tasks
+vim.api.nvim_win_set_cursor(0, { 1, 0 })
+nav_mod.jump_next_task(nav_buf)
+assert_eq(vim.api.nvim_win_get_cursor(0)[1], 5, "Jumped to pending task [ ] on line 5")
+
+-- 24. Test Human Review & Breadcrumb HUD
+print("\n[Test 24] Human Review & Breadcrumb HUD")
+local review_mod = require("super-markdown.spec.review")
+local bc_mod = require("super-markdown.render.breadcrumb")
+
+local r_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[r_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(r_buf, 0, -1, false, {
+  "# Root Spec",
+  "## Section A",
+  "Some details",
+  "### Subsection B",
+  "Sub details",
+})
+vim.api.nvim_win_set_buf(0, r_buf)
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+
+-- Breadcrumb test
+local bc_str, bc_chain = bc_mod.get_breadcrumb(r_buf, 4)
+assert_eq(#bc_chain >= 2, true, "Breadcrumb chain includes hierarchy")
+assert_eq(bc_str:find("Subsection B") ~= nil, true, "Breadcrumb string contains active subsection")
+
+-- Review approve test
+vim.api.nvim_win_set_cursor(0, { 2, 0 })
+review_mod.review_approve(r_buf)
+local r_lines = vim.api.nvim_buf_get_lines(r_buf, 0, 5, false)
+local has_approved = false
+for _, l in ipairs(r_lines) do
+  if l:find("%[!APPROVED%]") then has_approved = true end
+end
+assert_eq(has_approved, true, "Section approved badge stamped into document")
+
+-- Review question test
+vim.api.nvim_win_set_cursor(0, { 4, 0 })
+review_mod.review_question(r_buf, "Please verify edge cases")
+local q_lines = vim.api.nvim_buf_get_lines(r_buf, 0, -1, false)
+local has_agent_q = false
+for _, l in ipairs(q_lines) do
+  if l:find("@agent: Please verify edge cases") then has_agent_q = true end
+end
+assert_eq(has_agent_q, true, "Review question directive for AI agent inserted into document")
+
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")

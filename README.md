@@ -129,6 +129,28 @@ Built for modern developers who write, maintain, and navigate technical specific
 - **Executable Spec Code Blocks (`<leader>mrun` / `:SuperMarkdown run_block`)**:
   - Execute `lua`, `bash`/`sh`, `python`, or `javascript` code blocks directly inside your spec and render live `󰄵 PASS` / `󰀦 FAIL` virtual lines beneath the block.
 
+### 9. Human-in-the-Loop Review & AI Agent Change Eyeballer
+As AI agents increasingly author, modify, and execute technical specifications ("Markdown is the new code"), humans must read, review, and eyeball changes with zero cognitive friction:
+- **Agent Change Eyeballer HUD (`<leader>mdc` / `:SuperMarkdown diff_hud`)**:
+  - Floating dashboard analyzing changes against `git HEAD`: total insertions/modifications/deletions, which specific sections the agent touched, which requirements were modified, and which tasks were completed. Press `<CR>` on any hunk to jump directly to it.
+- **In-Buffer Spec Change Highlights (`<leader>md` / `:SuperMarkdown diff`)**:
+  - Live gutter indicators (`▎+`, `▎~`, `▎-`) and inline change badges (`󰜥 +3 Added`, `󰜥 ~2 Modified`, `▾ Deleted lines`) so you can instantly eyeball what the agent altered.
+- **TOC Agent Change Badges**:
+  - Headings in the TOC Sidebar and Telescope picker dynamically rollup changes (`[+3 ~1]`), allowing you to spot agent edits across 1000-line specs in a single glance.
+- **Semantic Spec Navigation**:
+  - `]c` / `[c`: Jump to next / previous agent change.
+  - `]r` / `[r`: Jump to next / previous requirement ID (`REQ-*`, `AC-*`, `ADR-*`).
+  - `]q` / `[q`: Jump to next / previous open question (`[?]` or `> [!QUESTION]`).
+  - `]b` / `[b`: Jump to next / previous blocker (`[!]` or `> [!CAUTION]`).
+  - `]t` / `[t`: Jump to next / previous pending task (`[ ]`, `[/]`).
+- **Human Review & Directive Workflow**:
+  - `<leader>mra` (`:SuperMarkdown review_approve`): Stamp section with `> [!APPROVED] Reviewed by human on <date>`.
+  - `<leader>mrq` (`:SuperMarkdown review_question`): Leave an inline directive for the agent (`> [!QUESTION] @agent: ...`) which is automatically prioritized in LLM prompts.
+  - `<leader>mrr` (`:SuperMarkdown review_reject`): Request revisions from the agent.
+- **Active Section Breadcrumb & Metric HUD (`<leader>mb` / `:SuperMarkdown breadcrumb`)**:
+  - Floating breadcrumb showing exact hierarchical position in deeply nested specs:
+    `󰈙 Architecture › 󰲡 Storage Layer › 󰲣 Schema Contracts` with live task and blocker rollups.
+
 ---
 
 ## 📦 Installation
@@ -203,6 +225,17 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>mgt`| `:SuperMarkdown llm_tests` | Open LLM Application Test Suite Prompt Studio |
 | Normal | `<leader>mgr`| `:SuperMarkdown llm_review` | Open LLM Spec Review & Co-Author Prompt Studio |
 | Normal | `<leader>mrun`| `:SuperMarkdown run_block` | Execute code block under cursor inline |
+| Normal | `<leader>md` | `:SuperMarkdown diff` | Toggle Git Spec change highlights (`+`, `~`, `▾`) |
+| Normal | `<leader>mdc`| `:SuperMarkdown diff_hud` | Open Agent Spec Changes Eyeballer HUD |
+| Normal | `]c` / `[c` | `:SuperMarkdown next/prev_change` | Jump to next / previous agent change hunk |
+| Normal | `]r` / `[r` | `:SuperMarkdown next/prev_req` | Jump to next / previous requirement (`REQ-*`, `AC-*`) |
+| Normal | `]q` / `[q` | `:SuperMarkdown next/prev_question` | Jump to next / previous open question (`[?]`) |
+| Normal | `]b` / `[b` | `:SuperMarkdown next/prev_blocker` | Jump to next / previous blocker (`[!]`) |
+| Normal | `]t` / `[t` | `:SuperMarkdown next/prev_task` | Jump to next / previous pending task (`[ ]`) |
+| Normal | `<leader>mra`| `:SuperMarkdown review_approve` | Stamp section as human `[!APPROVED]` |
+| Normal | `<leader>mrq`| `:SuperMarkdown review_question` | Leave directive/question for AI agent `[!QUESTION]` |
+| Normal | `<leader>mrr`| `:SuperMarkdown review_reject` | Request section revisions from AI agent `[!REJECTED]` |
+| Normal | `<leader>mb` | `:SuperMarkdown breadcrumb` | Show active section breadcrumb & metric HUD |
 | Insert | `<CR>` | *(smart list)* | Auto-continue list bullet / number |
 | Normal/Insert | `<Tab>` | *(table)* | Jump to next table cell |
 | Normal/Insert | `<S-Tab>` | *(table)* | Jump to previous table cell |

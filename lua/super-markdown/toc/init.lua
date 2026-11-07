@@ -41,6 +41,14 @@ function M.get_headings(bufnr)
     end
   end
 
+  local sec_diffs = {}
+  local ok_df, diff_mod = pcall(require, "super-markdown.spec.diff")
+  if ok_df and diff_mod.get_section_diffs then
+    pcall(function()
+      sec_diffs = diff_mod.get_section_diffs(bufnr) or {}
+    end)
+  end
+
   local in_codeblock = false
 
   for lnum, line in ipairs(lines) do
@@ -68,8 +76,27 @@ function M.get_headings(bufnr)
           if c.question and c.question > 0 then
             table.insert(parts, string.format("?%d", c.question))
           end
+
+          -- Agent spec diff changes
+          local sd = sec_diffs[lnum]
+          if sd and (sd.added > 0 or sd.modified > 0 or sd.deleted > 0) then
+            local d_parts = {}
+            if sd.added > 0 then table.insert(d_parts, "+" .. sd.added) end
+            if sd.modified > 0 then table.insert(d_parts, "~" .. sd.modified) end
+            if sd.deleted > 0 then table.insert(d_parts, "-" .. sd.deleted) end
+            table.insert(parts, "󰜥 " .. table.concat(d_parts, " "))
+          end
+
+          -- Human approval / revision status
+          local next_line = lines[lnum + 1] or ""
+          if next_line:match("^>%s*%[!APPROVED%]") then
+            table.insert(parts, "󰄵 APPROVED")
+          elseif next_line:match("^>%s*%[!REJECTED%]") then
+            table.insert(parts, "󰀦 REVISION")
+          end
+
           if #parts > 0 then
-            badge = " [" .. table.concat(parts, " ") .. "]"
+            badge = " [" .. table.concat(parts, " · ") .. "]"
           end
         end
 

@@ -14,6 +14,10 @@ local spec = require("super-markdown.spec")
 local llm = require("super-markdown.llm")
 local preview_pane = require("super-markdown.preview_pane")
 local focus = require("super-markdown.focus")
+local spec_diff = require("super-markdown.spec.diff")
+local spec_nav = require("super-markdown.spec.navigation")
+local spec_review = require("super-markdown.spec.review")
+local breadcrumb = require("super-markdown.render.breadcrumb")
 
 local M = {}
 
@@ -173,6 +177,22 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.llm_tests, M.llm_tests, "Generate LLM Test Suite Prompt")
   bmap("n", km.llm_review, M.llm_review, "Generate LLM Spec Review Prompt")
   bmap("n", km.run_block, M.run_block, "Execute Code Block Inline")
+  bmap("n", km.diff_toggle, M.diff_toggle, "Toggle Git Spec Change Highlights")
+  bmap("n", km.diff_dashboard, M.diff_dashboard, "Open Agent Spec Changes Eyeballer HUD")
+  bmap("n", km.next_change, M.next_change, "Jump to Next Changed Line")
+  bmap("n", km.prev_change, M.prev_change, "Jump to Previous Changed Line")
+  bmap("n", km.next_requirement, M.next_requirement, "Jump to Next Requirement (REQ-*/AC-*)")
+  bmap("n", km.prev_requirement, M.prev_requirement, "Jump to Previous Requirement (REQ-*/AC-*)")
+  bmap("n", km.next_question, M.next_question, "Jump to Next Open Question")
+  bmap("n", km.prev_question, M.prev_question, "Jump to Previous Open Question")
+  bmap("n", km.next_blocker, M.next_blocker, "Jump to Next Blocker")
+  bmap("n", km.prev_blocker, M.prev_blocker, "Jump to Previous Blocker")
+  bmap("n", km.next_task, M.next_task, "Jump to Next Pending Task")
+  bmap("n", km.prev_task, M.prev_task, "Jump to Previous Pending Task")
+  bmap("n", km.review_approve, M.review_approve, "Approve Section as Human Reviewer")
+  bmap("n", km.review_question, M.review_question, "Leave Question/Directive for AI Agent")
+  bmap("n", km.review_reject, M.review_reject, "Request Revision from AI Agent")
+  bmap("n", km.breadcrumb, M.breadcrumb, "Show Active Breadcrumb & Stats HUD")
 
   if config.options.tools.table_helpers then
     bmap({ "n", "i" }, km.table_next, table_tool.next_cell, "Next Table Cell")
@@ -294,5 +314,23 @@ M.focus_enable = focus.enable
 M.focus_disable = focus.disable
 M.focus_block = focus.get_block_range
 M.is_focus_enabled = focus.is_enabled
+M.diff_toggle = spec_diff.toggle
+M.diff_render = spec_diff.render
+M.diff_clear = spec_diff.clear
+M.diff_dashboard = spec_diff.open_diff_dashboard
+M.next_change = spec_nav.jump_next_change
+M.prev_change = spec_nav.jump_prev_change
+M.next_requirement = spec_nav.jump_next_requirement
+M.prev_requirement = spec_nav.jump_prev_requirement
+M.next_question = spec_nav.jump_next_question
+M.prev_question = spec_nav.jump_prev_question
+M.next_blocker = spec_nav.jump_next_blocker
+M.prev_blocker = spec_nav.jump_prev_blocker
+M.next_task = spec_nav.jump_next_task
+M.prev_task = spec_nav.jump_prev_task
+M.review_approve = spec_review.review_approve
+M.review_question = spec_review.review_question
+M.review_reject = spec_review.review_reject
+M.breadcrumb = breadcrumb.show_hud
 
 return M
