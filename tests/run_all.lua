@@ -626,7 +626,7 @@ end
 assert_eq(badge_count, 1, "Exactly 1 [Live In-Buffer Render] badge at start of Mermaid block")
 assert_eq(diag_count, 1, "Exactly 1 rendered diagram at end of Mermaid block")
 
--- 21. Test Markdown Focus Mode (Block & Section Spotlight & Dimming)
+-- 21. Test Markdown Focus Mode (Block, Section & TOC Spotlight & Dimming)
 print("\n[Test 21] Markdown Focus Mode (Spotlight Active Block, Dim Others)")
 local focus_mod = require("super-markdown.focus")
 local f_buf = vim.api.nvim_create_buf(false, true)
@@ -650,6 +650,9 @@ vim.api.nvim_buf_set_lines(f_buf, 0, -1, false, {
 })
 vim.api.nvim_win_set_buf(0, f_buf)
 
+-- Test default scope
+assert_eq(focus_mod.get_scope(f_buf), "toc", "Focus mode default scope is 'toc'")
+
 -- Test block ranges across document elements
 local tbl_s, tbl_e = focus_mod.get_block_range(f_buf, 6, "block")
 assert_eq(tbl_s == 5 and tbl_e == 7, true, "Table block range [5..7] detected accurately")
@@ -667,6 +670,18 @@ assert_eq(p_s == 3 and p_e == 3, true, "Paragraph block range [3..3] detected ac
 local sec_s, sec_e = focus_mod.get_block_range(f_buf, 10, "section")
 assert_eq(sec_s == 1 and sec_e == 15, true, "Section scope spans from H1 heading to end of section [1..15]")
 
+-- Test TOC scope on showcase.md (first root mentioned in TOC [1..6] highlighted, rest dimmed)
+local sc_buf = vim.fn.bufadd("examples/showcase.md")
+vim.fn.bufload(sc_buf)
+local toc_s1, toc_e1 = focus_mod.get_block_range(sc_buf, 1, "toc")
+assert_eq(toc_s1 == 1 and toc_e1 == 6, true, "First root mentioned in TOC spans [1..6] (stops before next TOC heading on line 7)")
+
+local toc_s_intro, toc_e_intro = focus_mod.get_block_range(sc_buf, 3, "toc")
+assert_eq(toc_s_intro == 1 and toc_e_intro == 6, true, "Preamble content under first root in TOC also focuses [1..6]")
+
+local toc_s2, toc_e2 = focus_mod.get_block_range(sc_buf, 7, "toc")
+assert_eq(toc_s2 == 7 and toc_e2 == 19, true, "Second heading in TOC spans [7..19] (stops before third heading on line 20)")
+
 -- Test toggle focus on/off
 assert_eq(focus_mod.is_enabled(f_buf), false, "Focus mode starts disabled by default")
 local st_on = focus_mod.toggle(f_buf, "on")
@@ -675,6 +690,9 @@ assert_eq(focus_mod.is_enabled(f_buf), true, "is_enabled returns true")
 
 focus_mod.toggle(f_buf, "section")
 assert_eq(focus_mod.get_scope(f_buf), "section", "Focus scope switched to 'section'")
+
+focus_mod.toggle(f_buf, "toc")
+assert_eq(focus_mod.get_scope(f_buf), "toc", "Focus scope switched back to 'toc'")
 
 local st_off = focus_mod.toggle(f_buf, "off")
 assert_eq(st_off, false, "Focus mode disabled via toggle('off')")

@@ -197,8 +197,8 @@ M.defaults = {
 
   -- Focus Mode (Spotlight active block, dim others)
   focus = {
-    enabled = false,       -- enable on startup
-    scope = "block",       -- "block" (codeblock, table, callout, list, paragraph) or "section" (heading section)
+    enabled = false,       -- enable on startup (disabled by default)
+    scope = "toc",         -- "toc" (focuses TOC heading section), "root", "section", or "block"
     dim_hl = "SuperMarkdownDimmed",
     priority = 250,        -- high priority to wash out syntax on dimmed lines
   },

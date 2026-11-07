@@ -52,9 +52,11 @@ Render Markdown elements directly inside your active buffer without losing your 
 Stay in flow when reading or writing long technical documents:
 - **Spotlight Active Block (`<leader>mf` / `:SuperMarkdown focus`)**: Dims all surrounding Markdown text while leaving the block under your cursor crisp and highlighted.
 - **Granular Scopes**:
+  - `scope = "toc"` *(Default)*: Highlights the active Table of Contents section (from the current heading to the next heading in the TOC). The first root mentioned in the TOC is spotlighted while the rest of the document is dimmed.
+  - `scope = "root"`: Highlights the entire active root section in the TOC hierarchy.
+  - `scope = "section"`: Highlights the section from the current heading down to the next heading of the same or higher level.
   - `scope = "block"`: Highlights the immediate paragraph, fenced code block, table, callout blockquote, or list item.
-  - `scope = "section"`: Highlights the entire section from the current heading down to the next heading of the same or higher level.
-  - Quickly switch scopes via `:SuperMarkdown focus block` or `:SuperMarkdown focus section`.
+  - Quickly switch scopes via `:SuperMarkdown focus toc`, `:SuperMarkdown focus root`, `:SuperMarkdown focus section`, or `:SuperMarkdown focus block`.
 - **Dual-Tier Detection Engine**: High-precision Treesitter AST parsing with an instant pure-Lua regex fallback.
 - **Zero-Flicker Ephemeral Rendering**: Powered by Neovim's `nvim_set_decoration_provider` using ephemeral extmarks—zero buffer modification, zero undo contamination, and instant updates as your cursor moves.
 
@@ -256,8 +258,8 @@ require("super-markdown").setup({
 
   -- Focus Mode (Spotlight active block, dim others)
   focus = {
-    enabled = false,       -- enable on startup
-    scope = "block",       -- "block" (codeblock, table, callout, list, paragraph) or "section" (heading section)
+    enabled = false,       -- enable on startup (disabled by default)
+    scope = "toc",         -- "toc" (focuses TOC heading section), "root", "section", or "block"
     dim_hl = "SuperMarkdownDimmed",
     priority = 250,        -- high priority to wash out syntax on dimmed lines
   },

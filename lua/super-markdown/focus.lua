@@ -28,7 +28,7 @@ function M.get_scope(bufnr)
     return st.scope
   end
   local f_opts = (config.options and config.options.focus) or {}
-  return f_opts.scope or "block"
+  return f_opts.scope or "toc"
 end
 
 --- Pure Lua fallback for detecting Markdown block boundaries when Treesitter is unavailable
@@ -190,7 +190,105 @@ function M.get_block_range(bufnr, lnum, scope)
   lnum = math.max(1, math.min(total_lines, lnum or 1))
   scope = scope or M.get_scope(bufnr)
 
-  -- 1. Section scope: from current heading to next heading of same or higher level
+  -- 1. TOC scope (default): focuses the active TOC section (from current heading to next heading in the TOC)
+  if scope == "toc" then
+    local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local in_fence = false
+    local headings = {}
+
+    for idx, l in ipairs(all_lines) do
+      if l:match("^%s*```") or l:match("^%s*~~~") then
+        in_fence = not in_fence
+      elseif not in_fence then
+        local hashes = l:match("^%s*(#+)%s")
+        if hashes and #hashes <= 6 then
+          table.insert(headings, { lnum = idx, level = #hashes })
+        end
+      end
+    end
+
+    if #headings == 0 then
+      return 1, total_lines, "toc_document"
+    end
+
+    -- Preamble before first TOC heading
+    if lnum < headings[1].lnum then
+      return 1, math.max(1, headings[1].lnum - 1), "toc_preamble"
+    end
+
+    -- Find the TOC heading containing lnum
+    for i = 1, #headings do
+      local cur_h = headings[i]
+      local next_h = headings[i + 1]
+      if not next_h or lnum < next_h.lnum then
+        local start_line = cur_h.lnum
+        local end_line = next_h and (next_h.lnum - 1) or total_lines
+        return start_line, end_line, "toc_heading"
+      end
+    end
+
+    return 1, total_lines, "toc"
+  end
+
+  -- 2. Root scope: focuses the active root section in the TOC (from root heading to next root heading)
+  if scope == "root" then
+    local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local in_fence = false
+    local headings = {}
+    local min_lvl = 6
+
+    for idx, l in ipairs(all_lines) do
+      if l:match("^%s*```") or l:match("^%s*~~~") then
+        in_fence = not in_fence
+      elseif not in_fence then
+        local hashes = l:match("^%s*(#+)%s")
+        if hashes and #hashes <= 6 then
+          local lvl = #hashes
+          table.insert(headings, { lnum = idx, level = lvl })
+          if lvl < min_lvl then
+            min_lvl = lvl
+          end
+        end
+      end
+    end
+
+    if #headings == 0 then
+      return 1, total_lines, "root_document"
+    end
+
+    local roots = {}
+    for _, h in ipairs(headings) do
+      if h.level == min_lvl then
+        table.insert(roots, h)
+      end
+    end
+
+    if lnum < roots[1].lnum then
+      return 1, math.max(1, roots[1].lnum - 1), "root_preamble"
+    end
+
+    -- If there is only one root and it has subheadings, check if cursor is in root intro
+    if #roots == 1 and #headings > 1 then
+      local first_sub = headings[2]
+      if lnum < first_sub.lnum then
+        return roots[1].lnum, math.max(roots[1].lnum, first_sub.lnum - 1), "root_intro"
+      end
+    end
+
+    for i = 1, #roots do
+      local cur_r = roots[i]
+      local next_r = roots[i + 1]
+      if not next_r or lnum < next_r.lnum then
+        local start_line = cur_r.lnum
+        local end_line = next_r and (next_r.lnum - 1) or total_lines
+        return start_line, end_line, "root_section"
+      end
+    end
+
+    return 1, total_lines, "root"
+  end
+
+  -- 3. Section scope: from current heading to next heading of same or higher level
   if scope == "section" then
     local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local cur_head_idx = nil
@@ -215,6 +313,24 @@ function M.get_block_range(bufnr, lnum, scope)
         end
       end
       return 1, end_preamble, "section_preamble"
+    end
+
+    -- If root heading (level 1) has subheadings, check if cursor is before first child subheading
+    local first_child_idx = nil
+    for l = cur_head_idx + 1, total_lines do
+      local hashes = all_lines[l]:match("^%s*(#+)%s")
+      if hashes then
+        if #hashes > cur_head_lvl and not first_child_idx then
+          first_child_idx = l
+        end
+        if #hashes <= cur_head_lvl then
+          break
+        end
+      end
+    end
+
+    if first_child_idx and lnum < first_child_idx then
+      return cur_head_idx, math.max(cur_head_idx, first_child_idx - 1), "section_root_intro"
     end
 
     local end_sec = total_lines
@@ -396,7 +512,7 @@ function M.toggle(bufnr, state, scope)
       new_state = true
     elseif state == "off" or state == "disable" then
       new_state = false
-    elseif state == "block" or state == "section" then
+    elseif state == "toc" or state == "root" or state == "section" or state == "block" then
       new_state = true
       scope = state
     elseif state == "toggle" then

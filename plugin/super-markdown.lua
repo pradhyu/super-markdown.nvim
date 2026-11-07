@@ -80,7 +80,7 @@ end, {
         end
         return matches
       elseif sub == "focus" or sub == "focus_toggle" then
-        local opts = { "toggle", "on", "off", "block", "section" }
+        local opts = { "toggle", "on", "off", "toc", "root", "section", "block" }
         local matches = {}
         for _, opt in ipairs(opts) do
           if vim.startswith(opt, words[3] or "") then
