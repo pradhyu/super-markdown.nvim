@@ -72,7 +72,7 @@ function M.render(bufnr)
   local win = vim.fn.bufwinid(bufnr)
   if win and win ~= -1 then
     pcall(vim.api.nvim_set_option_value, "conceallevel", r_opts.conceallevel or 2, { win = win })
-    pcall(vim.api.nvim_set_option_value, "concealcursor", r_opts.concealcursor or "c", { win = win })
+    pcall(vim.api.nvim_set_option_value, "concealcursor", r_opts.concealcursor or "nc", { win = win })
   end
 
   -- Clear previous decorations (both render and standalone mermaid namespaces)
@@ -83,6 +83,19 @@ function M.render(bufnr)
 
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local line_count = #lines
+
+  -- Prevent Neovim 0.11 Treesitter markdown conceal_lines from collapsing code fences
+  -- and hiding attached Mermaid diagrams or code block banners when cursor moves away
+  pcall(function()
+    local ts_ns = vim.api.nvim_create_namespace("nvim.treesitter.highlighter")
+    vim.api.nvim_buf_clear_namespace(bufnr, ts_ns, 0, -1)
+    for idx_l = 0, line_count - 1 do
+      local l_str = lines[idx_l + 1] or ""
+      if l_str:match("^%s*```") or l_str:match("^%s*~~~") then
+        vim.api.nvim_buf_set_extmark(bufnr, ts_ns, idx_l, 0, {})
+      end
+    end
+  end)
 
   -- Pre-compute section analysis for heading progress & traceability badges
   local sec_by_lnum = {}

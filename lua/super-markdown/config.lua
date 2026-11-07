@@ -9,11 +9,11 @@ M.defaults = {
   render = {
     enabled = true,
     conceallevel = 2,
-    concealcursor = "c", -- "c" keeps current line visible while editing in normal & insert mode
+    concealcursor = "nc", -- "nc" keeps rendered UI clean while navigating in normal mode, and reveals raw markdown in insert/visual mode
     headings = {
       enabled = true,
       spec_badges = true, -- render live task rollup, blocker, question, and @impl/@test badges on headings
-      folder_icon = true, -- render folder icon (󰝰 open / 󰉋 closed) in headers
+      folder_icon = false, -- fold column already shows +/- in gutter; folded sections show 󰉋 in foldtext
       open_folder_icon = "󰝰 ",
       closed_folder_icon = "󰉋 ",
       icons = { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " },
@@ -195,6 +195,14 @@ M.defaults = {
     auto_lint = false,     -- automatically publish spec lint diagnostics on BufWritePost
   },
 
+  -- Focus Mode (Spotlight active block, dim others)
+  focus = {
+    enabled = false,       -- enable on startup
+    scope = "block",       -- "block" (codeblock, table, callout, list, paragraph) or "section" (heading section)
+    dim_hl = "SuperMarkdownDimmed",
+    priority = 250,        -- high priority to wash out syntax on dimmed lines
+  },
+
   -- LLM Context Bundler & Prompt Generator options
   llm = {
     enabled = true,
@@ -206,6 +214,7 @@ M.defaults = {
   -- Keybindings
   keymaps = {
     toggle_render = "<leader>mr",
+    toggle_focus = "<leader>mf",
     preview_pane = "<leader>mv",
     toggle_editor = "<leader>me",
     reader_mode = "<leader>mV",

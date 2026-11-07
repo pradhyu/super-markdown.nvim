@@ -87,11 +87,18 @@ function M.render_inline(bufnr, ns_id, opts)
   if not vim.api.nvim_buf_is_valid(bufnr) then return end
   -- Always clear standalone mermaid namespace so diagrams never duplicate across BufEnter/TextChanged
   pcall(vim.api.nvim_buf_clear_namespace, bufnr, NS_ID, 0, -1)
+  -- Also remove any previously placed mermaid badge/diagram extmarks in ns_id if ns_id differs from NS_ID
+  if ns_id ~= NS_ID then
+    for idx_clear = 1, 64 do
+      pcall(vim.api.nvim_buf_del_extmark, bufnr, ns_id, 900000 + idx_clear * 2)
+      pcall(vim.api.nvim_buf_del_extmark, bufnr, ns_id, 900000 + idx_clear * 2 + 1)
+    end
+  end
   if opts.enabled == false or opts.inline == false then return end
 
   local blocks = M.get_blocks(bufnr)
 
-  for _, block in ipairs(blocks) do
+  for b_idx, block in ipairs(blocks) do
     local code = block.code
     local hash = vim.fn.sha256(code)
 
@@ -114,22 +121,35 @@ function M.render_inline(bufnr, ns_id, opts)
     -- 1. Attach live rendered diagram as virt_lines right beneath the block
     -- (When the side Live Preview Pane is open, it renders the diagram on the right,
     --  so we omit duplicate virt_lines in the editable buffer for smooth scrolling)
+    -- Use priority 85 (below codeblock bottom border priority 90) so the codeblock's
+    -- ╰────╯ border closes the code fence before the diagram box begins, and use a
+    -- deterministic extmark id per block so it can never stack duplicates.
     local preview_pane_open = package.loaded["super-markdown.preview_pane"]
       and package.loaded["super-markdown.preview_pane"].is_open()
     if not preview_pane_open then
       pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, block.end_lnum - 1, 0, {
+        id = 900000 + b_idx * 2,
         virt_lines = virt_lines,
         virt_lines_above = false,
-        priority = 92,
+        priority = 85,
       })
     end
 
-    -- 2. Add badge on the opening ```mermaid fence
+    -- 2. Add single unified header banner on the opening ```mermaid fence
+    -- (deterministic extmark id prevents stacking)
+    local open_line = vim.api.nvim_buf_get_lines(bufnr, block.start_lnum - 1, block.start_lnum, false)[1] or ""
+    local indent = open_line:match("^(%s*)") or ""
+    local filler = string.rep("─", math.max(4, 60 - 38 - #indent))
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, block.start_lnum - 1, 0, {
+      id = 900000 + b_idx * 2 + 1,
+      end_col = #open_line,
+      conceal = "",
       virt_text = {
-        { " 󰡷 [Live In-Buffer Render] ", "SuperMarkdownMermaidReady" },
+        { indent .. "╭─ ", "SuperMarkdownCodeBorder" },
+        { "󰡷 mermaid [Live In-Buffer Render]", "SuperMarkdownMermaidReady" },
+        { " " .. filler .. "╮", "SuperMarkdownCodeBorder" },
       },
-      virt_text_pos = "eol",
+      virt_text_pos = "inline",
       priority = 95,
     })
 

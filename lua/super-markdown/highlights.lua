@@ -85,6 +85,14 @@ function M.setup()
   -- Header Folder Icons
   set_hl("SuperMarkdownFolderOpen", { fg = "#e0af68", bold = true })
   set_hl("SuperMarkdownFolderClosed", { fg = "#7aa2f7", bold = true })
+
+  -- Focus Mode (Dimmed text outside active block)
+  local has_diag = vim.fn.hlexists("DiagnosticUnnecessary") == 1
+  set_hl("SuperMarkdownDimmed", {
+    fg = "#565f89",
+    link = has_diag and "DiagnosticUnnecessary" or nil,
+    default = true,
+  })
 end
 
 return M

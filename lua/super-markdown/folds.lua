@@ -85,7 +85,7 @@ function M.foldtext()
     local h_opts = (config.options and config.options.render and config.options.render.headings) or {}
     local icons = h_opts.icons
     local icon = (icons and icons[level]) or (string.rep("#", level) .. " ")
-    local folder = (h_opts.folder_icon ~= false) and (h_opts.closed_folder_icon or "󰉋 ") or ""
+    local folder = (h_opts.closed_folder_icon ~= false) and (h_opts.closed_folder_icon or "󰉋 ") or ""
     local indent = string.rep("  ", level - 1)
     return string.format(" %s%s%s%s%s  ⋯ (%d lines)", indent, folder, icon, title, spec_str, count)
   end

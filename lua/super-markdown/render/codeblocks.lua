@@ -222,34 +222,28 @@ function M.render(bufnr, ns_id, lnum, line, in_codeblock, opts)
 
   if indent and not in_codeblock then
     local lang_clean = vim.trim(lang):lower()
+    local is_mermaid = (lang_clean == "mermaid" or lang_clean == "mmd")
     local display_badge = (opts.language_icons and opts.language_icons[lang_clean])
       or (lang_clean ~= "" and (" " .. lang_clean) or " code")
 
-    if show_border then
-      local badge_len = vim.fn.strdisplaywidth(display_badge) + 2
-      local filler = string.rep("─", math.max(4, min_width - badge_len - #indent - 4))
-
-      local top_decor = {
-        { indent .. "╭─ ", border_hl },
-        { display_badge, lang_hl },
-        { " " .. filler .. "╮", border_hl },
-      }
-
-      pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
-        virt_lines = { top_decor },
-        virt_lines_above = true,
-        priority = 90,
-      })
-    end
-
-    -- Render opening fence line as part of the block
     local extmark_opts = {
       line_hl_group = block_hl,
       priority = 90,
     }
-    if show_border then
-      extmark_opts.virt_text = { { indent .. border_char .. " ", border_hl } }
+    if show_border and not is_mermaid then
+      local badge_len = vim.fn.strdisplaywidth(display_badge) + 2
+      local filler = string.rep("─", math.max(4, min_width - badge_len - #indent - 4))
+      extmark_opts.end_col = #line
+      extmark_opts.conceal = ""
+      extmark_opts.virt_text = {
+        { indent .. "╭─ ", border_hl },
+        { display_badge, lang_hl },
+        { " " .. filler .. "╮", border_hl },
+      }
       extmark_opts.virt_text_pos = "inline"
+    elseif show_border and is_mermaid then
+      extmark_opts.end_col = #line
+      extmark_opts.conceal = ""
     end
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, extmark_opts)
 
@@ -257,7 +251,7 @@ function M.render(bufnr, ns_id, lnum, line, in_codeblock, opts)
       lang = lang_clean,
       indent = indent,
       fence_type = fence_type,
-      use_lexical = (lang_clean ~= "" and lang_clean ~= "mermaid" and not has_treesitter_injection(bufnr, lang_clean)),
+      use_lexical = (lang_clean ~= "" and not is_mermaid and not has_treesitter_injection(bufnr, lang_clean)),
     }
   end
 
@@ -277,23 +271,15 @@ function M.render(bufnr, ns_id, lnum, line, in_codeblock, opts)
       priority = 90,
     }
     if show_border then
-      extmark_opts.virt_text = { { close_indent .. border_char .. " ", border_hl } }
+      local filler = string.rep("─", math.max(4, min_width - #close_indent - 2))
+      extmark_opts.end_col = #line
+      extmark_opts.conceal = ""
+      extmark_opts.virt_text = {
+        { close_indent .. "╰" .. filler .. "╯", border_hl },
+      }
       extmark_opts.virt_text_pos = "inline"
     end
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, extmark_opts)
-
-    if show_border then
-      local filler = string.rep("─", math.max(4, min_width - #close_indent - 2))
-      local bot_decor = {
-        { close_indent .. "╰" .. filler .. "╯", border_hl },
-      }
-
-      pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
-        virt_lines = { bot_decor },
-        virt_lines_above = false,
-        priority = 90,
-      })
-    end
 
     return nil
   end

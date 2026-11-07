@@ -4,7 +4,7 @@
 
 **The premier, all-in-one Markdown powerhouse for Neovim.**
 
-*High-fidelity in-buffer live rendering • Native terminal Mermaid diagram preview • High-speed Telescope & Snacks TOC search • Intelligent table formatting & authoring tools*
+*High-fidelity in-buffer live rendering • Focus Mode spotlight • Native terminal Mermaid preview • High-speed Telescope & Snacks TOC search • Intelligent table & spec authoring tools*
 
 [![Neovim 0.10+](https://img.shields.io/badge/Neovim-0.10+-blueviolet.svg?style=flat-square&logo=neovim)](https://neovim.io)
 [![Lua](https://img.shields.io/badge/Lua-5.1%20%2F%20LuaJIT-blue.svg?style=flat-square&logo=lua)](https://www.lua.org)
@@ -28,26 +28,37 @@ Existing Neovim markdown plugins force you to compromise:
 
 ## ✨ Features
 
-### 1. In-Buffer Live Rendering & Preview
+### 1. In-Buffer Live Rendering & Enhanced Human Readability
 Render Markdown elements directly inside your active buffer without losing your cursor or editing context:
-- **Headings**: Styled level icons (`󰲡 `, `󰲣 `, `󰲥 `, `󰲧 `, `󰲩 `, `󰲫 `) with optional background banners.
-- **Interactive Checkboxes**:
-  - `[ ]` ➔ `󰄱 ` (Unchecked)
+- **Headings**: Styled level icons (`󰲡 `, `󰲣 `, `󰲥 `, `󰲧 `, `󰲩 `, `󰲫 `) with visually indented hierarchy corresponding to heading depth.
+- **Interactive Checkboxes & Lists**:
+  - `[ ]` ➔ `󰄱 ` (Unchecked; conceals the raw `- ` bullet for clean typography: `󰄱 Task`)
   - `[x]` ➔ `󰄵 ` (Checked, highlighted)
-  - `[-]` ➔ `󰡖 ` (Canceled / Strikethrough)
+  - `[-]` ➔ `󰡖 ` (Canceled with automatic strikethrough styling)
   - `[/]` ➔ `󰄰 ` (In-progress)
   - `[!]` ➔ `󰀦 ` (Important)
   - `[?]` ➔ `󰋽 ` (Question)
   - Single-keystroke toggle or cycle with `<leader>mx`.
-- **GitHub & Obsidian Callouts**: Styled admonition blocks with left vertical accent bar:
-  - `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`, `> [!DANGER]`, `> [!TODO]`
-- **Box-Drawing Tables**: Delimiter rows and pipes dynamically styled with clean Unicode box-drawing characters (`┌─┬─┐`, `│ │ │`, `├─┼─┤`, `└─┴─┘`).
-- **Code Block Badges**: Top border banners with language icons (`󰢱 lua`, `󰌠 python`, `󰛦 rust`, `󰡷 mermaid`) and framed bottom borders.
+  - Nested standard unordered lists render beautiful typographic bullets (`•`, `◦`, `▪`, `▫`) reflecting nesting depth.
+- **GitHub & Obsidian Callouts & Blockquotes**:
+  - Styled admonition blocks with left vertical accent bar: `> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`, `> [!DANGER]`, `> [!TODO]`.
+  - Standard blockquotes rendered with a subtle vertical border `▍` and styled text.
+- **Box-Drawing Tables**: Delimiter rows and pipes dynamically styled with clean Unicode box-drawing characters (`┌─┬─┐`, `│ │ │`, `├─┼─┤`, `└─┴─┘`) with raw alignment colons (`:---:`) cleanly hidden and headers accented.
+- **Code Block Badges & Borders**: Language icon tab banners rendered cleanly on opening fences (`󰢱 lua`, `󰌠 python`, `󰛦 rust`, `󰡷 mermaid`) with matching closing bottom borders without duplicate empty lines.
 - **Horizontal Dividers**: `---`, `***` replaced with elegant full-width divider lines.
 - **Concealed Links**: URLs concealed while link text is styled with `󰌹 ` and underlined.
 
-### 2. Mermaid Diagram Engine (Terminal Graphics & ASCII)
-### 2. Automated In-Line Mermaid Diagram Engine
+### 2. Focus Mode (Spotlight Active Block, Dim Others)
+Stay in flow when reading or writing long technical documents:
+- **Spotlight Active Block (`<leader>mf` / `:SuperMarkdown focus`)**: Dims all surrounding Markdown text while leaving the block under your cursor crisp and highlighted.
+- **Granular Scopes**:
+  - `scope = "block"`: Highlights the immediate paragraph, fenced code block, table, callout blockquote, or list item.
+  - `scope = "section"`: Highlights the entire section from the current heading down to the next heading of the same or higher level.
+  - Quickly switch scopes via `:SuperMarkdown focus block` or `:SuperMarkdown focus section`.
+- **Dual-Tier Detection Engine**: High-precision Treesitter AST parsing with an instant pure-Lua regex fallback.
+- **Zero-Flicker Ephemeral Rendering**: Powered by Neovim's `nvim_set_decoration_provider` using ephemeral extmarks—zero buffer modification, zero undo contamination, and instant updates as your cursor moves.
+
+### 3. Automated In-Line Mermaid Diagram Engine
 Write ```` ```mermaid ```` diagrams and have them **render automatically in line** directly inside the active buffer—no manual preview required:
 - **Full Syntax Highlighting**: Real-time syntax highlighting for raw Mermaid text (keywords, directions, connectors/arrows, node shapes & brackets, pipe edge labels, comments, strings, styles, and hex colors) powered by live buffer extmarks and standard Vim syntax (`syntax/mermaid.vim`).
 - **Live In-Buffer Rendering (`virt_lines`)**: Diagrams are parsed and rendered directly beneath the code block as clean, connected Unicode diagrams that scroll naturally with the buffer.
@@ -55,7 +66,13 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
 - **Terminal Graphics & Floating Preview (`<leader>mp`)**: Pixel-perfect Kitty Graphics Protocol rendering via `kitten icat` inside floating popup windows when high-resolution image preview is desired.
 - **Instant SHA-256 Disk Caching**: Compiled diagrams are cached in `~/.cache/nvim/super_markdown/mermaid/`, making subsequent renders instantaneous (0ms).
 
-### 3. High-Speed TOC Viewer with Telescope Search
+### 4. Live Synchronized Side Preview Pane
+- **Side-by-Side Read-Only Split (`<leader>mv` / `:SuperMarkdown preview`)**: Opens a dedicated read-only right vertical split previewing the rendered markdown document while you edit the raw source on the left.
+- **Bi-Directional Scroll Synchronization**: Moving in the editor smoothly synchronizes line positions in the preview window and vice-versa.
+- **Reader Mode (`<leader>mV` / `:SuperMarkdown preview reader`)**: Hides fold columns, line numbers, and signs for a serene reading experience.
+- **Toggle Focused Editor Mode (`<leader>me` / `:SuperMarkdown editor`)**: Hides distracting UI elements in the editing buffer to optimize focus.
+
+### 5. High-Speed TOC Viewer with Telescope Search
 - **Telescope Heading Finder (`<leader>mo`)**:
   - Hierarchical tree display with indented level icons in natural top-to-bottom document order.
   - Live fuzzy search across all document headings.
@@ -67,14 +84,14 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
   - Live scrolling: moving up and down the sidebar automatically scrolls the markdown viewer to the highlighted section.
   - Pressing `<CR>` jumps to the selected heading and switches focus directly to the markdown viewer.
 
-### 4. Automated Table Alignment & Authoring Tools
+### 6. Automated Table Alignment & Authoring Tools
 - **Automated In-Line Column Alignment**: Ragged or unaligned Markdown tables are automatically rendered with perfectly aligned columns, custom alignment indicators (`:---`, `:---:`, `---:`), and box-drawing borders without modifying the buffer text.
 - **Source Formatter (`<leader>mtf`)**: Explicitly formats and snaps the buffer text itself into clean Markdown spacing.
 - **Table Cell Navigation**: Press `<Tab>` to jump to the next cell and `<S-Tab>` to the previous cell. Pressing `<Tab>` on the last cell automatically adds a new row!
 - **Smart List Continuation**: Pressing `<CR>` in insert mode automatically continues unordered (`- `, `* `, `+ `) and numbered (`1. `) lists.
 - **Smart Link Follow & Paste (`<leader>ml` / `gx`)**: Open URLs in your browser or jump directly to local Markdown notes.
 
-### 5. Hierarchical Heading Folding with Gutter Indicators
+### 7. Hierarchical Heading Folding with Gutter Indicators
 - **Gutter Fold Indicators (`+` and `-`)**:
   - Open folds display `-` in the fold column, closed folds display `+`, and nested lines display `│`.
 - **Hierarchical Folds**:
@@ -87,7 +104,7 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
   - Toggle individual section folds via `:SuperMarkdown fold_toggle` or `<leader>mza` (`za`).
   - Fold to specific depth via `:SuperMarkdown fold_level <N>`.
 
-### 6. Spec-Driven Development (SDD) & LLM Workflow Suite
+### 8. Spec-Driven Development (SDD) & LLM Workflow Suite
 Built for modern developers who write, maintain, and navigate technical specifications to drive LLM code and test generation:
 - **Live Heading Progress & Traceability Badges**:
   - Headings automatically display section task rollups (`󰄵 3/5`), blockers (`󰀦 1`), open questions (`󰋽 1`), and implementation/test badges (`󰅩 impl`, `󰙨 test`)—even when folded!
@@ -159,6 +176,11 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Mode | Keymap | Command | Description |
 | :--- | :--- | :--- | :--- |
 | Normal | `<leader>mr` | `:SuperMarkdown toggle` | Toggle in-buffer live rendering |
+| Normal | `<leader>mf` | `:SuperMarkdown focus` | Toggle Focus Mode (spotlight active block/section) |
+| Normal | `<leader>mv` | `:SuperMarkdown preview` | Open synchronized side-by-side preview pane |
+| Normal | `<leader>mV` | `:SuperMarkdown preview reader` | Open full Reader Mode (distraction-free split) |
+| Normal | `<leader>me` | `:SuperMarkdown editor` | Toggle focused editor mode (hide gutter/signs) |
+| Normal | `<leader>ma` | `:SuperMarkdown auto_refresh` | Toggle live background auto-refresh in preview |
 | Normal | `<leader>mo` | `:SuperMarkdown toc` | Open Table of Contents (Telescope / Picker) |
 | Normal | `<leader>ms` | `:SuperMarkdown toc_sidebar` | Toggle TOC outline sidebar |
 | Normal | `<leader>mp` | `:SuperMarkdown mermaid` | Preview Mermaid diagram under cursor |
@@ -198,10 +220,11 @@ require("super-markdown").setup({
   render = {
     enabled = true,
     conceallevel = 2,
-    concealcursor = "c", -- keeps current line revealed in normal/insert modes for easy editing
+    concealcursor = "nc", -- keeps current line concealed in normal/command mode, revealed in insert
     headings = {
       enabled = true,
       icons = { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " },
+      folder_icon = false, -- cleaner heading typography without redundant folder icon
     },
     checkboxes = {
       enabled = true,
@@ -229,6 +252,14 @@ require("super-markdown").setup({
       enabled = true,
       icon = "󰌹 ",
     },
+  },
+
+  -- Focus Mode (Spotlight active block, dim others)
+  focus = {
+    enabled = false,       -- enable on startup
+    scope = "block",       -- "block" (codeblock, table, callout, list, paragraph) or "section" (heading section)
+    dim_hl = "SuperMarkdownDimmed",
+    priority = 250,        -- high priority to wash out syntax on dimmed lines
   },
 
   -- Markdown folding options (+ and - in gutter)

@@ -16,13 +16,17 @@ function M.render(bufnr, ns_id, lnum, line, prev_callout, opts)
     local display_title = (title and #title > 0) and title or c_info.title
     local start_col = 0
     local end_col = #line
+    local icon_str = c_info.icon or "󰋽 "
+    if not icon_str:match("%s$") then
+      icon_str = icon_str .. " "
+    end
 
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, start_col, {
       end_col = end_col,
       conceal = "",
       virt_text = {
         { opts.border_char .. " ", c_info.hl },
-        { c_info.icon .. " ", c_info.hl },
+        { icon_str, c_info.hl },
         { display_title, c_info.hl },
       },
       virt_text_pos = "inline",
@@ -33,18 +37,19 @@ function M.render(bufnr, ns_id, lnum, line, prev_callout, opts)
   end
 
   -- Check if line is continuing a quote/callout: ^(%s*>%s*)(.*)$
-  local q_prefix, rest = line:match("^(%s*>%s*)(.*)$")
-  if q_prefix and prev_callout then
+  local q_prefix, _ = line:match("^(%s*>%s*)(.*)$")
+  if q_prefix then
+    local quote_hl = (prev_callout and prev_callout.hl) or "SuperMarkdownTableBorder"
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
       end_col = #q_prefix,
       conceal = "",
       virt_text = {
-        { opts.border_char .. " ", prev_callout.hl },
+        { opts.border_char .. " ", quote_hl },
       },
       virt_text_pos = "inline",
       priority = 90,
     })
-    return prev_callout
+    return prev_callout or { type = "QUOTE", hl = quote_hl }
   end
 
   return nil

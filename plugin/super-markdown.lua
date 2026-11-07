@@ -5,6 +5,8 @@ vim.g.loaded_super_markdown = true
 
 local subcommands = {
   toggle = function() require("super-markdown").toggle() end,
+  focus = function(args) require("super-markdown").focus_toggle(nil, args and args[2]) end,
+  focus_toggle = function(args) require("super-markdown").focus_toggle(nil, args and args[2]) end,
   preview = function() require("super-markdown").preview_pane() end,
   preview_pane = function() require("super-markdown").preview_pane() end,
   preview_only = function(args) require("super-markdown").reader_mode(args and args[2]) end,
@@ -70,6 +72,15 @@ end, {
       local sub = words[2]
       if sub == "toc_sidebar" or sub == "toc_sidebar_pos" or sub == "reader" or sub == "reader_mode" or sub == "preview_only" then
         local opts = { "left", "right", "flip" }
+        local matches = {}
+        for _, opt in ipairs(opts) do
+          if vim.startswith(opt, words[3] or "") then
+            table.insert(matches, opt)
+          end
+        end
+        return matches
+      elseif sub == "focus" or sub == "focus_toggle" then
+        local opts = { "toggle", "on", "off", "block", "section" }
         local matches = {}
         for _, opt in ipairs(opts) do
           if vim.startswith(opt, words[3] or "") then

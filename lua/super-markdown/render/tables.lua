@@ -208,20 +208,11 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
     local is_header = sep_idx and (lnum < sep_idx)
 
     if r.is_sep then
-      -- Delimiter row
+      -- Delimiter row: smooth continuous box-drawing divider
       local delim_pieces = { { c.mid_left, hl } }
       for i = 1, num_cols do
-        local align = aligns[i]
         local w = col_widths[i]
-        local seg
-        if align == "center" then
-          seg = ":" .. string.rep(head_sep, math.max(0, w)) .. ":"
-        elseif align == "right" then
-          seg = string.rep(head_sep, w + 1) .. ":"
-        else
-          seg = ":" .. string.rep(head_sep, w + 1)
-        end
-        table.insert(delim_pieces, { seg, hl })
+        table.insert(delim_pieces, { string.rep(head_sep, w + 2), hl })
         table.insert(delim_pieces, { (i < num_cols) and c.mid_mid or c.mid_right, hl })
       end
 
@@ -257,6 +248,30 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
           virt_text_pos = "overlay",
           priority = 90,
         })
+
+        -- Highlight header cell text
+        if is_header and p_end - 1 > p_start then
+          pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, p_start, {
+            end_col = p_end - 1,
+            hl_group = head_hl,
+            priority = 92,
+          })
+        end
+
+        -- Conceal backslash in escaped pipes (\|) inside the cell so it reads cleanly as |
+        local esc_pos = p_start + 1
+        while esc_pos < p_end - 1 do
+          local bs = r.line:find("\\|", esc_pos, true)
+          if not bs or bs >= p_end then
+            break
+          end
+          pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, bs - 1, {
+            end_col = bs,
+            conceal = "",
+            priority = 95,
+          })
+          esc_pos = bs + 2
+        end
 
         -- Inline padding adjustments
         local need_lead = (1 + pad_l) - cell.lead_len

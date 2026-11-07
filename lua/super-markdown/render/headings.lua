@@ -13,13 +13,17 @@ function M.render(bufnr, ns_id, lnum, line, opts, sec_info)
   local bg_hl = opts.backgrounds[level] or "SuperMarkdownH1Bg"
 
   local virt_chunks = {}
-  if opts.folder_icon ~= false then
+  local indent_pad = string.rep(" ", math.max(0, level - 1))
+  if indent_pad ~= "" then
+    table.insert(virt_chunks, { indent_pad, fg_hl })
+  end
+  if opts.folder_icon == true then
     local open_icon = opts.open_folder_icon or "󰝰 "
     table.insert(virt_chunks, { open_icon, "SuperMarkdownFolderOpen" })
   end
   table.insert(virt_chunks, { icon, fg_hl })
 
-  -- Replace the leading hashes and space with folder icon + heading level icon
+  -- Replace the leading hashes and space with heading level icon and highlight heading text
   pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
     end_col = #hashes + 1,
     conceal = "",
@@ -27,6 +31,11 @@ function M.render(bufnr, ns_id, lnum, line, opts, sec_info)
     virt_text_pos = "inline",
     line_hl_group = level <= 2 and bg_hl or nil,
     priority = 100,
+  })
+  pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, #hashes + 1, {
+    end_col = #line,
+    hl_group = fg_hl,
+    priority = 95,
   })
 
   -- Render Spec Progress & Traceability Badges at end of heading line

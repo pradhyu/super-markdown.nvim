@@ -161,7 +161,7 @@ for _, em in ipairs(extmarks) do
   end
 end
 assert_eq(has_code_hl, true, "Codeblock lines receive background highlight")
-assert_eq(vim.api.nvim_get_option_value("concealcursor", { win = test_win }), "c", "concealcursor defaults to 'c' to keep fences editable")
+assert_eq(vim.api.nvim_get_option_value("concealcursor", { win = test_win }), "nc", "concealcursor defaults to 'nc' to keep normal-mode reading clean and insert-mode editable")
 
 -- 7. Test Telescope TOC Configuration & Preview Scrolling
 print("\n[Test 7] Telescope TOC & Preview Scrolling")
@@ -581,6 +581,104 @@ assert_eq(updated_p_lines[1]:find("Updated Live Title") ~= nil, true, "Preview p
 
 preview_pane.close()
 assert_eq(preview_pane.is_open(), false, "Live preview side pane closed cleanly")
+
+-- 20. Test Mermaid Badge & Diagram Non-Duplication Across Repeated Renders & Reloads
+print("\n[Test 20] Mermaid Badge & Diagram Non-Duplication")
+local dup_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[dup_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(dup_buf, 0, -1, false, {
+  "# Mermaid Deduplication Check",
+  "```mermaid",
+  "graph TD",
+  "    A[Start] --> B[End]",
+  "```",
+})
+vim.api.nvim_win_set_buf(0, dup_buf)
+for _ = 1, 5 do
+  require("super-markdown.render").render(dup_buf)
+  require("super-markdown.mermaid").render_inline(dup_buf)
+  require("super-markdown.mermaid").render_status(dup_buf)
+  vim.api.nvim_exec_autocmds("BufEnter", { buffer = dup_buf })
+  vim.api.nvim_exec_autocmds("TextChanged", { buffer = dup_buf })
+end
+require("super-markdown").reload()
+
+local r_ns_dup = require("super-markdown.render").get_namespace()
+local m_ns_dup = require("super-markdown.mermaid").get_namespace()
+local badge_count = 0
+local diag_count = 0
+for _, ns_check in ipairs({ r_ns_dup, m_ns_dup }) do
+  local marks = vim.api.nvim_buf_get_extmarks(dup_buf, ns_check, 0, -1, { details = true })
+  for _, m in ipairs(marks) do
+    local d = m[4]
+    if d.virt_text then
+      for _, vt in ipairs(d.virt_text) do
+        if vt[1]:find("Live In-Buffer Render", 1, true) then
+          badge_count = badge_count + 1
+        end
+      end
+    end
+    if d.virt_lines and #d.virt_lines > 3 then
+      diag_count = diag_count + 1
+    end
+  end
+end
+assert_eq(badge_count, 1, "Exactly 1 [Live In-Buffer Render] badge at start of Mermaid block")
+assert_eq(diag_count, 1, "Exactly 1 rendered diagram at end of Mermaid block")
+
+-- 21. Test Markdown Focus Mode (Block & Section Spotlight & Dimming)
+print("\n[Test 21] Markdown Focus Mode (Spotlight Active Block, Dim Others)")
+local focus_mod = require("super-markdown.focus")
+local f_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[f_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(f_buf, 0, -1, false, {
+  "# Focus Mode Document",
+  "",
+  "Paragraph 1 intro text.",
+  "",
+  "| Col A | Col B |",
+  "| :--- | :--- |",
+  "| 1 | 2 |",
+  "",
+  "```lua",
+  "local active = true",
+  "return active",
+  "```",
+  "",
+  "- [ ] Task 1",
+  "- [x] Task 2",
+})
+vim.api.nvim_win_set_buf(0, f_buf)
+
+-- Test block ranges across document elements
+local tbl_s, tbl_e = focus_mod.get_block_range(f_buf, 6, "block")
+assert_eq(tbl_s == 5 and tbl_e == 7, true, "Table block range [5..7] detected accurately")
+
+local code_s, code_e = focus_mod.get_block_range(f_buf, 10, "block")
+assert_eq(code_s == 9 and code_e == 12, true, "Code block range [9..12] detected accurately")
+
+local list_s, list_e = focus_mod.get_block_range(f_buf, 15, "block")
+assert_eq(list_s == 14 and list_e == 15, true, "List block range [14..15] detected accurately")
+
+local p_s, p_e = focus_mod.get_block_range(f_buf, 3, "block")
+assert_eq(p_s == 3 and p_e == 3, true, "Paragraph block range [3..3] detected accurately")
+
+-- Test section scope
+local sec_s, sec_e = focus_mod.get_block_range(f_buf, 10, "section")
+assert_eq(sec_s == 1 and sec_e == 15, true, "Section scope spans from H1 heading to end of section [1..15]")
+
+-- Test toggle focus on/off
+assert_eq(focus_mod.is_enabled(f_buf), false, "Focus mode starts disabled by default")
+local st_on = focus_mod.toggle(f_buf, "on")
+assert_eq(st_on, true, "Focus mode enabled via toggle('on')")
+assert_eq(focus_mod.is_enabled(f_buf), true, "is_enabled returns true")
+
+focus_mod.toggle(f_buf, "section")
+assert_eq(focus_mod.get_scope(f_buf), "section", "Focus scope switched to 'section'")
+
+local st_off = focus_mod.toggle(f_buf, "off")
+assert_eq(st_off, false, "Focus mode disabled via toggle('off')")
+assert_eq(focus_mod.is_enabled(f_buf), false, "is_enabled returns false")
 
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then

@@ -13,8 +13,25 @@ local folds = require("super-markdown.folds")
 local spec = require("super-markdown.spec")
 local llm = require("super-markdown.llm")
 local preview_pane = require("super-markdown.preview_pane")
+local focus = require("super-markdown.focus")
 
 local M = {}
+
+local function purge_buffer_autocmds(bufnr)
+  pcall(vim.api.nvim_create_augroup, "SuperMarkdownBuf_" .. bufnr, { clear = true })
+  local ok, autocmds = pcall(vim.api.nvim_get_autocmds, { buffer = bufnr })
+  if not ok or type(autocmds) ~= "table" then
+    return
+  end
+  for _, ac in ipairs(autocmds) do
+    if not ac.group and ac.id and type(ac.callback) == "function" then
+      local ok_info, info = pcall(debug.getinfo, ac.callback, "S")
+      if ok_info and info and info.source and info.source:find("super%-markdown") then
+        pcall(vim.api.nvim_del_autocmd, ac.id)
+      end
+    end
+  end
+end
 
 function M.setup(user_opts)
   config.setup(user_opts)
@@ -42,11 +59,16 @@ function M.setup(user_opts)
     pattern = config.options.filetypes,
     callback = function(args)
       local bufnr = args.buf
+      purge_buffer_autocmds(bufnr)
+      local buf_group = vim.api.nvim_create_augroup("SuperMarkdownBuf_" .. bufnr, { clear = true })
 
       -- Attach in-buffer renderer
       if config.options.render.enabled then
         render.attach(bufnr)
       end
+
+      -- Attach focus mode (active block spotlight & dimming)
+      focus.attach(bufnr)
 
       -- Attach markdown folding (+ and - in gutter)
       if config.options.folds and config.options.folds.enabled ~= false then
@@ -57,6 +79,7 @@ function M.setup(user_opts)
       if config.options.mermaid.enabled and not config.options.render.enabled then
         mermaid.render_status(bufnr)
         vim.api.nvim_create_autocmd({ "TextChanged", "BufEnter" }, {
+          group = buf_group,
           buffer = bufnr,
           callback = function()
             mermaid.render_status(bufnr)
@@ -75,6 +98,7 @@ function M.setup(user_opts)
       -- Auto-format markdown tables when finishing an edit (InsertLeave) or saving (BufWritePre)
       if config.options.tools and config.options.tools.auto_format_table ~= false then
         vim.api.nvim_create_autocmd("InsertLeave", {
+          group = buf_group,
           buffer = bufnr,
           callback = function()
             if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modifiable then
@@ -83,6 +107,7 @@ function M.setup(user_opts)
           end,
         })
         vim.api.nvim_create_autocmd("BufWritePre", {
+          group = buf_group,
           buffer = bufnr,
           callback = function()
             if vim.api.nvim_buf_is_valid(bufnr) and vim.bo[bufnr].modifiable then
@@ -95,6 +120,7 @@ function M.setup(user_opts)
       -- Optional auto-lint on write
       if config.options.spec and config.options.spec.auto_lint then
         vim.api.nvim_create_autocmd("BufWritePost", {
+          group = buf_group,
           buffer = bufnr,
           callback = function()
             require("super-markdown.spec.analyzer").lint(bufnr, true)
@@ -122,6 +148,7 @@ function M.setup_buffer_keymaps(bufnr)
   end
 
   bmap("n", km.toggle_render, M.toggle, "Toggle in-buffer render")
+  bmap("n", km.toggle_focus, M.focus_toggle, "Toggle Focus Mode (Highlight Active Block, Dim Others)")
   bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
   bmap("n", km.toggle_editor, M.toggle_editor, "Toggle Edit Mode Split Visibility (Hide/Show Editor)")
   bmap("n", km.reader_mode, M.reader_mode, "Enter Reader Mode (Hide Editor + Open Preview & TOC Sidebar)")
@@ -200,8 +227,12 @@ function M.reload()
     if vim.api.nvim_buf_is_loaded(buf) then
       local ft = vim.bo[buf].filetype
       if ft == "markdown" or ft == "md" or ft == "markdown.mdx" then
+        purge_buffer_autocmds(buf)
+        pcall(vim.api.nvim_buf_clear_namespace, buf, vim.api.nvim_create_namespace("super_markdown_render"), 0, -1)
+        pcall(vim.api.nvim_buf_clear_namespace, buf, vim.api.nvim_create_namespace("super_markdown_mermaid"), 0, -1)
         require("super-markdown.render").attach(buf)
         require("super-markdown.folds").attach(buf)
+        require("super-markdown.focus").attach(buf)
         reloaded.setup_buffer_keymaps(buf)
       elseif ft == "supermarkdown_toc" then
         vim.keymap.set("n", "q", function()
@@ -258,5 +289,10 @@ M.llm_tests = llm.generate_tests
 M.llm_review = llm.review_spec
 M.run_block = runner.run_block
 M.clear_runs = runner.clear_results
+M.focus_toggle = focus.toggle
+M.focus_enable = focus.enable
+M.focus_disable = focus.disable
+M.focus_block = focus.get_block_range
+M.is_focus_enabled = focus.is_enabled
 
 return M
