@@ -2266,7 +2266,7 @@ function M.tokenize_line(line)
           break
         end
       end
-      table.insert(chunks, { line:sub(s, i - 1), "SuperMarkdownMermaidType" })
+      table.insert(chunks, { line:sub(s, i - 1), "SuperMarkdownMermaidBox" })
     elseif b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼" or b3 == "●" or b3 == "◉" or b3 == "⟲" or b3 == "╌" then
       table.insert(chunks, { b3, "SuperMarkdownMermaidArrow" })
       i = i + 3

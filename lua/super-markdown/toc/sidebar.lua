@@ -11,6 +11,7 @@ local current_pos = nil
 local headings_cache = {}
 local augroup_id = nil
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_toc_sidebar")
+local NS_ACTIVE = vim.api.nvim_create_namespace("super_markdown_toc_sidebar_active")
 
 function M.is_open()
   return sidebar_win ~= nil and vim.api.nvim_win_is_valid(sidebar_win)
@@ -166,6 +167,46 @@ function M.refresh()
     priority = 100,
   })
 
+  -- Heading rows styling: match exact colors used in Markdown rendering
+  pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ID, 2, -1)
+  for idx, h in ipairs(headings) do
+    local line_nr = idx + 1 -- accounting for 2 header lines
+    local fg_hl = "SuperMarkdownH" .. h.level
+    local bg_hl = "SuperMarkdownH" .. h.level .. "Bg"
+
+    local line_text = h.display or ""
+    local indent_len = (h.level - 1) * 2
+    local start_col = math.min(indent_len, #line_text)
+    local end_col = #line_text
+
+    local badge_idx = line_text:find("%s+%[")
+    local title_end = badge_idx and (badge_idx - 1) or end_col
+
+    -- 1. Highlight heading icon and title with exact level color
+    pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, line_nr, start_col, {
+      end_col = title_end,
+      hl_group = fg_hl,
+      priority = 90,
+    })
+
+    -- 2. Highlight badge components with comment/badge style
+    if badge_idx then
+      pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, line_nr, badge_idx, {
+        end_col = end_col,
+        hl_group = "Comment",
+        priority = 85,
+      })
+    end
+
+    -- 3. Level 1 & 2 subtle background banner matching Markdown rendering
+    if h.level <= 2 then
+      pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, line_nr, 0, {
+        line_hl_group = bg_hl,
+        priority = 80,
+      })
+    end
+  end
+
   M.sync_cursor()
 end
 
@@ -204,9 +245,9 @@ function M.sync_cursor()
   end
 
   if active_idx and sidebar_buf and vim.api.nvim_buf_is_valid(sidebar_buf) then
-    vim.api.nvim_buf_clear_namespace(sidebar_buf, NS_ID, 2, -1)
+    pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ACTIVE, 0, -1)
     local target_line = active_idx + 1 -- accounting for 2 header lines
-    pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, target_line, 0, {
+    pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ACTIVE, target_line, 0, {
       line_hl_group = "SuperMarkdownTocActive",
       priority = 100,
     })
@@ -239,9 +280,9 @@ function M.preview_heading()
       end)
     end
 
-    pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ID, 2, -1)
+    pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ACTIVE, 0, -1)
     local hl_line = math.max(2, cursor_row - 1)
-    pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ID, hl_line, 0, {
+    pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ACTIVE, hl_line, 0, {
       line_hl_group = "SuperMarkdownTocActive",
       priority = 100,
     })

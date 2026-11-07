@@ -212,6 +212,19 @@ local sb_win = vim.api.nvim_get_current_win()
 assert_eq(sb_win ~= sb_main_win, true, "Sidebar window is active on open")
 assert_eq(vim.api.nvim_win_get_cursor(sb_win)[1], 3, "Sidebar cursor starts on first heading (line 3)")
 
+-- Verify TOC sidebar headings render with exact same markdown heading colors (SuperMarkdownH1..H6)
+local sb_buf = vim.api.nvim_win_get_buf(sb_win)
+local sb_ns = vim.api.nvim_create_namespace("super_markdown_toc_sidebar")
+local sb_marks = vim.api.nvim_buf_get_extmarks(sb_buf, sb_ns, 2, 5, { details = true })
+local found_sb_h1 = false
+local found_sb_h2 = false
+for _, m in ipairs(sb_marks) do
+  local hlg = m[4] and m[4].hl_group
+  if hlg == "SuperMarkdownH1" then found_sb_h1 = true end
+  if hlg == "SuperMarkdownH2" then found_sb_h2 = true end
+end
+assert_eq(found_sb_h1 and found_sb_h2, true, "TOC sidebar headings render with exact same colors (SuperMarkdownH1, H2) as markdown")
+
 -- Move down to second heading (line 4 in sidebar -> line 3 in test_buf)
 vim.api.nvim_win_set_cursor(sb_win, { 4, 0 })
 sidebar.preview_heading()
