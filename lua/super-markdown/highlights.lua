@@ -105,6 +105,18 @@ function M.setup()
   set_hl("SuperMarkdownItalic", { fg = kw_fg, italic = true })
   set_hl("SuperMarkdownInlineCode", { fg = const_fg, bg = cursorline_bg })
 
+  -- List Items & Key-Value Contrast
+  set_hl("SuperMarkdownListBullet", { fg = fn_fg })
+  set_hl("SuperMarkdownListBulletSub", { fg = id_fg })
+  set_hl("SuperMarkdownListNumber", { fg = fn_fg, bold = true })
+  set_hl("SuperMarkdownListKey", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownListColon", { fg = comment_fg })
+  set_hl("SuperMarkdownIndentGuide", { fg = comment_fg })
+
+  -- Blockquotes
+  set_hl("SuperMarkdownQuote", { fg = comment_fg, italic = true })
+  set_hl("SuperMarkdownQuoteBorder", { fg = float_border })
+
   -- Mermaid Indicators & Syntax Highlighting (Muted & Theme-Related)
   local box_fg = float_border
   local arrow_fg = spec_fg

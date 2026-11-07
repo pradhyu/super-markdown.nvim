@@ -18,6 +18,7 @@ local spec_diff = require("super-markdown.spec.diff")
 local spec_nav = require("super-markdown.spec.navigation")
 local spec_review = require("super-markdown.spec.review")
 local breadcrumb = require("super-markdown.render.breadcrumb")
+local zen = require("super-markdown.zen")
 
 local M = {}
 
@@ -153,6 +154,7 @@ function M.setup_buffer_keymaps(bufnr)
 
   bmap("n", km.toggle_render, M.toggle, "Toggle in-buffer render")
   bmap("n", km.toggle_focus, M.focus_toggle, "Toggle Focus Mode (Highlight Active Block, Dim Others)")
+  bmap("n", km.toggle_zen, M.zen, "Toggle Reading Focus Zoom (Maximize Buffer Width)")
   bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
   bmap("n", km.toggle_editor, M.toggle_editor, "Toggle Edit Mode Split Visibility (Hide/Show Editor)")
   bmap("n", km.reader_mode, M.reader_mode, "Enter Reader Mode (Hide Editor + Open Preview & TOC Sidebar)")
@@ -332,5 +334,6 @@ M.review_approve = spec_review.review_approve
 M.review_question = spec_review.review_question
 M.review_reject = spec_review.review_reject
 M.breadcrumb = breadcrumb.show_hud
+M.zen = zen.toggle
 
 return M

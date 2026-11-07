@@ -37,9 +37,9 @@ function M.render(bufnr, ns_id, lnum, line, prev_callout, opts)
   end
 
   -- Check if line is continuing a quote/callout: ^(%s*>%s*)(.*)$
-  local q_prefix, _ = line:match("^(%s*>%s*)(.*)$")
+  local q_prefix, q_rest = line:match("^(%s*>%s*)(.*)$")
   if q_prefix then
-    local quote_hl = (prev_callout and prev_callout.hl) or "SuperMarkdownTableBorder"
+    local quote_hl = (prev_callout and prev_callout.hl) or "SuperMarkdownQuoteBorder"
     pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
       end_col = #q_prefix,
       conceal = "",
@@ -49,6 +49,13 @@ function M.render(bufnr, ns_id, lnum, line, prev_callout, opts)
       virt_text_pos = "inline",
       priority = 90,
     })
+    if not prev_callout and q_rest and #q_rest > 0 then
+      pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, #q_prefix, {
+        end_col = #line,
+        hl_group = "SuperMarkdownQuote",
+        priority = 88,
+      })
+    end
     return prev_callout or { type = "QUOTE", hl = quote_hl }
   end
 

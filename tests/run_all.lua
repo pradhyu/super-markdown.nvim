@@ -830,6 +830,57 @@ for _, l in ipairs(q_lines) do
 end
 assert_eq(has_agent_q, true, "Review question directive for AI agent inserted into document")
 
+-- 25. Test Visual Breathing Room, Lists, Key-Value Contrast & Inline Code Pills
+print("\n[Test 25] Visual Breathing Room, Lists, Key-Value Contrast & Inline Code Pills")
+local dense_buf = vim.api.nvim_create_buf(false, true)
+vim.bo[dense_buf].filetype = "markdown"
+vim.api.nvim_buf_set_lines(dense_buf, 0, -1, false, {
+  "# Root Spec",
+  "## Section A",
+  "- **Namespaces**: Dedicated `super_markdown_render` extmarks.",
+  "  - Nested item under namespaces",
+  "1. **Ordered Step**: Run `tests/run_all.lua`.",
+  "> Standard blockquote vision statement",
+})
+vim.api.nvim_win_set_buf(0, dense_buf)
+local render = require("super-markdown.render")
+render.render(dense_buf)
+local d_extmarks = vim.api.nvim_buf_get_extmarks(dense_buf, render.get_namespace(), 0, -1, { details = true })
+assert_eq(#d_extmarks >= 6, true, "Extmarks placed on headings, lists, inline code, and quotes")
+
+-- Check virtual blank line above H2
+local has_h2_spacing = false
+for _, em in ipairs(d_extmarks) do
+  local d = em[4]
+  if em[2] == 1 and d.virt_lines and #d.virt_lines > 0 and d.virt_lines_above then
+    has_h2_spacing = true
+    break
+  end
+end
+assert_eq(has_h2_spacing, true, "H2 heading received virtual line breathing room above")
+
+-- Check inline code pill styling
+local has_code_pill = false
+for _, em in ipairs(d_extmarks) do
+  local d = em[4]
+  if d.hl_group == "SuperMarkdownInlineCode" then
+    has_code_pill = true
+    break
+  end
+end
+assert_eq(has_code_pill, true, "Inline code `super_markdown_render` received SuperMarkdownInlineCode highlight")
+
+-- Check Key-Value list contrast
+local has_list_key = false
+for _, em in ipairs(d_extmarks) do
+  local d = em[4]
+  if d.hl_group == "SuperMarkdownListKey" then
+    has_list_key = true
+    break
+  end
+end
+assert_eq(has_list_key, true, "List key **Namespaces** received SuperMarkdownListKey contrast highlight")
+
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")

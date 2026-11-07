@@ -43,24 +43,10 @@ function M.render(bufnr, ns_id, lnum, line, opts)
         priority = 95,
       })
     end
-    return
+    return true
   end
 
-  -- 2. Standard Unordered Bullet List: ^(%s*)([%-%*%+])(%s+)(.*)$
-  local b_indent, _, b_space, _ = line:match("^(%s*)([%-%*%+])(%s+)(.*)$")
-  if b_indent and b_space then
-    local depth = math.floor(#b_indent / 2)
-    local bullet = BULLET_ICONS[(depth % #BULLET_ICONS) + 1]
-    pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, #b_indent, {
-      end_col = #b_indent + 1 + #b_space,
-      conceal = "",
-      virt_text = {
-        { bullet, "SuperMarkdownH2" },
-      },
-      virt_text_pos = "inline",
-      priority = 95,
-    })
-  end
+  return false
 end
 
 return M

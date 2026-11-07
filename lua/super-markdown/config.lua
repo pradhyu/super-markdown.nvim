@@ -12,6 +12,7 @@ M.defaults = {
     concealcursor = "nc", -- "nc" keeps rendered UI clean while navigating in normal mode, and reveals raw markdown in insert/visual mode
     headings = {
       enabled = true,
+      spacing = { above = 1, below = 0 }, -- vertical breathing room above major headings (H1/H2)
       spec_badges = true, -- render live task rollup, blocker, question, and @impl/@test badges on headings
       folder_icon = false, -- fold column already shows +/- in gutter; folded sections show 󰉋 in foldtext
       open_folder_icon = "󰝰 ",
@@ -45,6 +46,16 @@ M.defaults = {
         important = { icon = "󰀦 ", hl = "SuperMarkdownCheckboxImportant" },
         question = { icon = "󰋽 ", hl = "SuperMarkdownCheckboxQuestion" },
       },
+    },
+    lists = {
+      enabled = true,
+      bullets = { "● ", "○ ", "▪ ", "▫ " },
+      indent_guides = true,
+      key_contrast = true, -- emphasize **Key**: and **Key** - in lists for scannability
+    },
+    inline_code = {
+      enabled = true,
+      hl = "SuperMarkdownInlineCode",
     },
     callouts = {
       enabled = true,
@@ -215,6 +226,7 @@ M.defaults = {
   keymaps = {
     toggle_render = "<leader>mr",
     toggle_focus = "<leader>mf",
+    toggle_zen = "<leader>mz",
     preview_pane = "<leader>mv",
     toggle_editor = "<leader>me",
     reader_mode = "<leader>mV",

@@ -23,12 +23,34 @@ function M.render(bufnr, ns_id, lnum, line, opts, sec_info)
   end
   table.insert(virt_chunks, { icon, fg_hl })
 
+  -- Vertical breathing room: Add virtual blank line above major headings (H1/H2)
+  local spacing_above = 0
+  if opts.spacing ~= nil then
+    if type(opts.spacing) == "table" and opts.spacing.above then
+      spacing_above = opts.spacing.above
+    elseif opts.spacing == true then
+      spacing_above = (level <= 2) and 1 or 0
+    end
+  else
+    spacing_above = (level <= 2) and 1 or 0
+  end
+
+  local virt_lines = nil
+  if spacing_above > 0 and lnum > 0 then
+    virt_lines = {}
+    for _ = 1, spacing_above do
+      table.insert(virt_lines, { { "", "" } })
+    end
+  end
+
   -- Replace the leading hashes and space with heading level icon and highlight heading text
   pcall(vim.api.nvim_buf_set_extmark, bufnr, ns_id, lnum, 0, {
     end_col = #hashes + 1,
     conceal = "",
     virt_text = virt_chunks,
     virt_text_pos = "inline",
+    virt_lines = virt_lines,
+    virt_lines_above = true,
     line_hl_group = level <= 2 and bg_hl or nil,
     priority = 100,
   })

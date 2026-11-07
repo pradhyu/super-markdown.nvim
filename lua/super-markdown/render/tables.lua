@@ -45,8 +45,20 @@ function M.find_unescaped_pipes(line)
 end
 
 --- Computes the rendered display width of a Markdown cell when `conceallevel >= 2` is active.
---- Strips concealed inline Markdown markers (`**`, `__`, `*`, `` ` ``, `~~`, `\|`, `[text](url)`).
+--- Strips concealed inline Markdown markers (`**`, `__`, `*`, `` ` ``, `~~`, `\|`, `[text](url)`),
+--- and handles HTML line breaks (`<br>`, `<br/>`) by taking the max segment width.
 function M.visual_cell_width(str, conceallevel)
+  if str:match("<br%s*/?>") then
+    local max_w = 0
+    -- Split by <br> or <br/>
+    local segments = vim.split(str, "<br%s*/?>", { trimempty = true })
+    for _, seg in ipairs(segments) do
+      local w = M.visual_cell_width(vim.trim(seg), conceallevel)
+      if w > max_w then max_w = w end
+    end
+    if max_w > 0 then return max_w end
+  end
+
   if (conceallevel or 2) < 2 then
     return vim.fn.strdisplaywidth(str)
   end
@@ -67,6 +79,8 @@ function M.visual_cell_width(str, conceallevel)
   s = s:gsub("~~(.-)~~", "%1")
   -- 4. Inline code backticks `code` -> code
   s = s:gsub("`+([^`]+)`+", "%1")
+  -- 5. Strip break tags
+  s = s:gsub("<br%s*/?>", " ")
   return vim.fn.strdisplaywidth(s)
 end
 
@@ -169,13 +183,15 @@ function M.render_block(bufnr, ns_id, start_lnum, end_lnum, lines, opts)
   end
 
   -- Compute max column widths (ignoring separator row)
+  local max_col_w = (opts and opts.max_col_width) or 60
   local col_widths = {}
   for i = 1, num_cols do col_widths[i] = 3 end
   for _, r in ipairs(rows) do
     if not r.is_sep then
       for i, cell in ipairs(r.cells) do
-        if cell.width > col_widths[i] then
-          col_widths[i] = cell.width
+        local w = math.min(cell.width, max_col_w)
+        if w > col_widths[i] then
+          col_widths[i] = w
         end
       end
     end
