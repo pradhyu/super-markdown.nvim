@@ -19,6 +19,10 @@ local spec_nav = require("super-markdown.spec.navigation")
 local spec_review = require("super-markdown.spec.review")
 local breadcrumb = require("super-markdown.render.breadcrumb")
 local zen = require("super-markdown.zen")
+local skim = require("super-markdown.skim")
+local eyeball = require("super-markdown.spec.eyeball")
+local statusline = require("super-markdown.statusline")
+local sticky = require("super-markdown.sticky")
 
 local M = {}
 
@@ -79,6 +83,9 @@ function M.setup(user_opts)
       if config.options.folds and config.options.folds.enabled ~= false then
         folds.attach(bufnr)
       end
+
+      -- Attach sticky stacked headers
+      sticky.attach(bufnr)
 
       -- Render mermaid block status indicators when full buffer render is disabled
       if config.options.mermaid.enabled and not config.options.render.enabled then
@@ -154,6 +161,10 @@ function M.setup_buffer_keymaps(bufnr)
 
   bmap("n", km.toggle_render, M.toggle, "Toggle in-buffer render")
   bmap("n", km.toggle_focus, M.focus_toggle, "Toggle Focus Mode (Highlight Active Block, Dim Others)")
+  bmap("n", km.toggle_skim, M.skim_toggle, "Toggle Executive Skim Mode (Prose Dimmer)")
+  bmap("n", km.toggle_sticky, M.sticky_toggle, "Toggle Sticky Stacked Headers (Context Stack at Window Top)")
+  bmap("n", km.toggle_scroll_to_top, M.toggle_scroll_to_top, "Toggle TOC Scroll to Top (zt ↔ zz)")
+  bmap("n", km.eyeball, M.eyeball, "Open Agent Spec Eyeballer & Scorecard HUD")
   bmap("n", km.toggle_zen, M.zen, "Toggle Reading Focus Zoom (Maximize Buffer Width)")
   bmap("n", km.preview_pane, M.preview_pane, "Toggle Live Read-Only Side Preview Pane")
   bmap("n", km.toggle_editor, M.toggle_editor, "Toggle Edit Mode Split Visibility (Hide/Show Editor)")
@@ -166,9 +177,16 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.format_table, M.table_format, "Format Markdown Table")
   bmap("n", km.follow_link, M.follow_link, "Follow Markdown Link")
   bmap("n", km.preview_ref, M.preview_ref, "Preview Linked Code Reference")
-  bmap("n", km.fold_all, M.fold_all, "Fold all sections")
-  bmap("n", km.unfold_all, M.unfold_all, "Unfold all sections")
-  bmap("n", km.fold_toggle, M.fold_toggle, "Toggle fold under cursor")
+  bmap("n", km.fold_all, M.collapse_all, "Fold all sections across views")
+  bmap("n", km.unfold_all, M.expand_all, "Unfold all sections across views")
+  bmap("n", km.fold_toggle, M.toggle_header, "Toggle fold under cursor across views")
+  bmap("n", "za", M.toggle_header, "Toggle fold under cursor across views")
+  bmap("n", "zc", M.collapse_header, "Collapse fold under cursor across views")
+  bmap("n", "zo", M.expand_header, "Expand fold under cursor across views")
+  bmap("n", "zM", M.collapse_all, "Collapse all sections across views")
+  bmap("n", "zR", M.expand_all, "Expand all sections across views")
+  bmap("n", "zm", M.fold_more, "Fold more across views")
+  bmap("n", "zr", M.fold_less, "Fold less across views")
   bmap("n", km.spec_dashboard, M.spec_dashboard, "Spec Health & Traceability Dashboard")
   bmap("n", km.spec_pick, M.spec_pick, "Semantic Spec Element Picker")
   bmap("n", km.spec_lint, M.spec_lint, "Lint Spec for Ambiguity & Completeness")
@@ -191,9 +209,21 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.prev_blocker, M.prev_blocker, "Jump to Previous Blocker")
   bmap("n", km.next_task, M.next_task, "Jump to Next Pending Task")
   bmap("n", km.prev_task, M.prev_task, "Jump to Previous Pending Task")
+  bmap("n", km.next_risk, M.next_risk, "Jump to Next Critical Risk / Hazard")
+  bmap("n", km.prev_risk, M.prev_risk, "Jump to Previous Critical Risk / Hazard")
+  bmap("n", km.next_fluff, M.next_fluff, "Jump to Next Ambiguity / AI Fluff")
+  bmap("n", km.prev_fluff, M.prev_fluff, "Jump to Previous Ambiguity / AI Fluff")
+  bmap("n", km.next_scenario, M.next_scenario, "Jump to Next Acceptance Criteria / BDD Scenario")
+  bmap("n", km.prev_scenario, M.prev_scenario, "Jump to Previous Acceptance Criteria / BDD Scenario")
+  bmap("n", km.next_review, M.next_review, "Jump to Next Human Review Directive")
+  bmap("n", km.prev_review, M.prev_review, "Jump to Previous Human Review Directive")
   bmap("n", km.review_approve, M.review_approve, "Approve Section as Human Reviewer")
   bmap("n", km.review_question, M.review_question, "Leave Question/Directive for AI Agent")
   bmap("n", km.review_reject, M.review_reject, "Request Revision from AI Agent")
+  bmap("n", km.review_comment, M.review_comment, "Add Inline Human Review Comment")
+  bmap("n", km.review_approve_all, M.review_approve_all, "Mark Entire Spec APPROVED")
+  bmap("n", km.review_reject_all, M.review_reject_all, "Request Changes on Entire Spec")
+  bmap("n", km.review_export, M.review_export, "Export Agent Review Feedback Prompt")
   bmap("n", km.breadcrumb, M.breadcrumb, "Show Active Breadcrumb & Stats HUD")
 
   if config.options.tools.table_helpers then
@@ -294,10 +324,17 @@ M.checkbox_toggle = checkbox.toggle
 M.table_format = table_tool.format
 M.follow_link = link_tool.follow
 M.preview_ref = link_tool.preview
-M.fold_all = folds.fold_all
-M.fold_toc = folds.fold_toc
-M.unfold_all = folds.unfold_all
-M.fold_toggle = folds.toggle_fold
+M.fold_all = folds.collapse_all
+M.fold_toc = folds.collapse_all
+M.unfold_all = folds.expand_all
+M.fold_toggle = folds.toggle_header
+M.collapse_all = folds.collapse_all
+M.expand_all = folds.expand_all
+M.collapse_header = folds.collapse_header
+M.expand_header = folds.expand_header
+M.toggle_header = folds.toggle_header
+M.fold_more = folds.fold_more
+M.fold_less = folds.fold_less
 M.fold_level = folds.fold_level
 M.spec_dashboard = spec.dashboard
 M.spec_pick = spec.pick
@@ -333,7 +370,36 @@ M.prev_task = spec_nav.jump_prev_task
 M.review_approve = spec_review.review_approve
 M.review_question = spec_review.review_question
 M.review_reject = spec_review.review_reject
+M.review_comment = spec_review.review_comment
+M.review_approve_all = spec_review.review_approve_all
+M.review_reject_all = spec_review.review_reject_all
+M.review_export = spec_review.review_export
+M.review_summary = spec_review.get_review_summary
+M.next_risk = spec_nav.jump_next_risk
+M.prev_risk = spec_nav.jump_prev_risk
+M.next_fluff = spec_nav.jump_next_ambiguity
+M.prev_fluff = spec_nav.jump_prev_ambiguity
+M.next_scenario = spec_nav.jump_next_scenario
+M.prev_scenario = spec_nav.jump_prev_scenario
+M.next_review = spec_nav.jump_next_review_note
+M.prev_review = spec_nav.jump_prev_review_note
+M.skim = skim.toggle
+M.skim_toggle = skim.toggle
+M.skim_enable = skim.enable
+M.skim_disable = skim.disable
+M.is_skim_enabled = skim.is_enabled
+M.eyeball = eyeball.open
+M.eyeball_hud = eyeball.open
 M.breadcrumb = breadcrumb.show_hud
 M.zen = zen.toggle
+M.statusline = statusline.get_status
+M.sticky = sticky.toggle
+M.sticky_toggle = sticky.toggle
+M.sticky_enable = sticky.enable
+M.sticky_disable = sticky.disable
+M.is_sticky_enabled = sticky.is_enabled
+M.set_scroll_to_top = toc_sidebar.set_scroll_to_top
+M.is_scroll_to_top = toc_sidebar.is_scroll_to_top
+M.toggle_scroll_to_top = function() toc_sidebar.set_scroll_to_top("toggle") end
 
 return M

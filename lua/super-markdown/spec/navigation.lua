@@ -138,4 +138,92 @@ function M.jump_prev_change(bufnr)
   require("super-markdown.spec.diff").jump_prev(bufnr)
 end
 
+-- 6. Critical Risks & Destructive Operations ([!RISK], [!SECURITY], rm -rf, DROP, etc.)
+local function is_risk(line)
+  if line:match("^%s*>%s*%[!RISK%]") or line:match("^%s*>%s*%[!SECURITY%]")
+    or line:match("^%s*>%s*%[!BREAKING%]") or line:match("^%s*>%s*%[!DANGER%]") then
+    return true
+  end
+  local ok_r, risks_mod = pcall(require, "super-markdown.render.risks")
+  if ok_r and risks_mod.RULES then
+    for _, rule in ipairs(risks_mod.RULES) do
+      if line:find(rule.pattern) then return true end
+    end
+  end
+  return false
+end
+
+function M.jump_next_risk(bufnr)
+  local m = find_matching_lines(bufnr, is_risk)
+  jump(bufnr, m, 1, "critical risks / hazards")
+end
+
+function M.jump_prev_risk(bufnr)
+  local m = find_matching_lines(bufnr, is_risk)
+  jump(bufnr, m, -1, "critical risks / hazards")
+end
+
+-- 7. Ambiguous Language & AI Fluff phrases
+local function is_ambiguity(line)
+  local ok_a, analyzer_mod = pcall(require, "super-markdown.spec.analyzer")
+  if ok_a and analyzer_mod.AMBIGUOUS_PATTERNS then
+    for _, rule in ipairs(analyzer_mod.AMBIGUOUS_PATTERNS) do
+      if line:find(rule.pattern) then return true end
+    end
+  end
+  local ok_f, fluff_mod = pcall(require, "super-markdown.render.fluff")
+  if ok_f and fluff_mod.PATTERNS then
+    for _, rule in ipairs(fluff_mod.PATTERNS) do
+      if line:find(rule.pattern) then return true end
+    end
+  end
+  return false
+end
+
+function M.jump_next_ambiguity(bufnr)
+  local m = find_matching_lines(bufnr, is_ambiguity)
+  jump(bufnr, m, 1, "spec ambiguities / AI fluff")
+end
+
+function M.jump_prev_ambiguity(bufnr)
+  local m = find_matching_lines(bufnr, is_ambiguity)
+  jump(bufnr, m, -1, "spec ambiguities / AI fluff")
+end
+
+-- 8. Acceptance Criteria & BDD Scenarios (Scenario:, Given, AC-*)
+local function is_scenario(line)
+  return line:match("^%s*[Ss]cenario") ~= nil
+    or line:match("^%s*[Aa]cceptance%s+[Cc]riteria") ~= nil
+    or line:match("%f[%a]AC%-%d+") ~= nil
+    or line:match("^%s*[%-%*%+]?%s*[Gg]iven%s") ~= nil
+end
+
+function M.jump_next_scenario(bufnr)
+  local m = find_matching_lines(bufnr, is_scenario)
+  jump(bufnr, m, 1, "BDD scenarios / acceptance criteria")
+end
+
+function M.jump_prev_scenario(bufnr)
+  local m = find_matching_lines(bufnr, is_scenario)
+  jump(bufnr, m, -1, "BDD scenarios / acceptance criteria")
+end
+
+-- 9. Human Review Directives ([!APPROVED], [!REJECTED], [!REVIEW], [!QUESTION])
+local function is_review_note(line)
+  return line:match("^%s*>%s*%[!APPROVED%]") ~= nil
+    or line:match("^%s*>%s*%[!REJECTED%]") ~= nil
+    or line:match("^%s*>%s*%[!REVIEW%]") ~= nil
+    or line:match("^%s*>%s*%[!QUESTION%]") ~= nil
+end
+
+function M.jump_next_review_note(bufnr)
+  local m = find_matching_lines(bufnr, is_review_note)
+  jump(bufnr, m, 1, "human review directives")
+end
+
+function M.jump_prev_review_note(bufnr)
+  local m = find_matching_lines(bufnr, is_review_note)
+  jump(bufnr, m, -1, "human review directives")
+end
+
 return M

@@ -3,6 +3,28 @@ local analyzer = require("super-markdown.spec.analyzer")
 
 local M = {}
 
+function M.is_markdown_buf(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return false
+  end
+  local ft = vim.bo[bufnr].filetype
+  if ft == "supermarkdown_preview" or ft == "supermarkdown_toc" then
+    return true
+  end
+  if ft == "markdown" or ft == "markdown.mdx" or ft == "md" then
+    return true
+  end
+  local fts = (config.options and config.options.filetypes) or { "markdown", "md", "markdown.mdx" }
+  if vim.tbl_contains(fts, ft) then
+    return true
+  end
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name:match("%.md$") or name:match("%.markdown$") or name:match("%.mdx$") then
+    return true
+  end
+  return false
+end
+
 function M.resolve_markdown_buf(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   if bufnr and vim.api.nvim_buf_is_valid(bufnr) then

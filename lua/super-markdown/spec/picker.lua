@@ -11,16 +11,39 @@ local KIND_LABELS = {
   table    = { badge = "TABLE   ", hl = "SuperMarkdownTableHeader" },
   callout  = { badge = "ALERT   ", hl = "SuperMarkdownCalloutWarning" },
   ref      = { badge = "TRACE   ", hl = "SuperMarkdownLink" },
+  risk     = { badge = "RISK    ", hl = "SuperMarkdownRiskHigh" },
+  review   = { badge = "REVIEW  ", hl = "SuperMarkdownReviewApproved" },
+  bdd      = { badge = "AC/BDD  ", hl = "SuperMarkdownBddThen" },
+  fluff    = { badge = "FLUFF   ", hl = "SuperMarkdownAiFluff" },
+}
+
+local FILTER_ALIASES = {
+  risks = "risk",
+  reviews = "review",
+  scenarios = "bdd",
+  fluffs = "fluff",
+  tasks = "task",
+  questions = "question",
+  blockers = "blocker",
+  reqs = "requirement",
+  requirements = "requirement",
+  tables = "table",
+  diagrams = "diagram",
+  refs = "ref",
 }
 
 --- Get filtered semantic spec items from buffer
 --- @param bufnr number
---- @param filter_kind string|nil Optional kind filter ("question", "blocker", "task", "requirement", "diagram", "table", "ref")
+--- @param filter_kind string|nil Optional kind filter ("question", "blocker", "task", "requirement", "diagram", "table", "ref", "risk", "review", "bdd", "fluff")
 --- @return table[] items
 function M.get_items(bufnr, filter_kind)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local analysis = analyzer.analyze(bufnr)
   local items = {}
+
+  if filter_kind and FILTER_ALIASES[filter_kind:lower()] then
+    filter_kind = FILTER_ALIASES[filter_kind:lower()]
+  end
 
   for _, item in ipairs(analysis.items) do
     if not filter_kind or filter_kind == "" or filter_kind == "all" or item.kind == filter_kind then

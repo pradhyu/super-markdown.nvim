@@ -11,12 +11,16 @@ local preview_win = nil
 local preview_buf = nil
 local source_buf = nil
 local source_win = nil
+local tab_previews = {}
 local augroup_id = nil
+local global_augroup_id = nil
+local buffer_augroup_id = nil
 local debounce_timer = nil
 local auto_refresh_timer = nil
 local file_watch_state = {}
 local source_to_preview = {}
 local preview_to_source = {}
+local current_out_meta = {}
 local mermaid_cache = {}
 local is_syncing = false
 local last_synced_s_top = nil
@@ -25,19 +29,46 @@ local last_synced_p_top = nil
 local last_synced_p_cursor = nil
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_preview_pane")
 
+local function sync_active_tab_state()
+  local tab = vim.api.nvim_get_current_tabpage()
+  local tp = tab_previews[tab]
+  if tp and tp.preview_win and vim.api.nvim_win_is_valid(tp.preview_win) and vim.api.nvim_win_get_tabpage(tp.preview_win) == tab then
+    preview_win = tp.preview_win
+    preview_buf = tp.preview_buf
+    source_buf = tp.source_buf
+    source_win = tp.source_win
+  else
+    if preview_win and not (vim.api.nvim_win_is_valid(preview_win) and vim.api.nvim_win_get_tabpage(preview_win) == tab) then
+      preview_win = nil
+      preview_buf = nil
+      source_buf = nil
+      source_win = nil
+    end
+  end
+end
+
 function M.is_open()
-  return preview_win ~= nil and vim.api.nvim_win_is_valid(preview_win)
+  sync_active_tab_state()
+  local tab = vim.api.nvim_get_current_tabpage()
+  local tp = tab_previews[tab]
+  local win = (tp and tp.preview_win) or preview_win
+  return win ~= nil
+    and vim.api.nvim_win_is_valid(win)
+    and vim.api.nvim_win_get_tabpage(win) == tab
 end
 
 function M.get_window()
-  return preview_win
+  sync_active_tab_state()
+  return (preview_win and vim.api.nvim_win_is_valid(preview_win)) and preview_win or nil
 end
 
 function M.get_buffer()
-  return preview_buf
+  sync_active_tab_state()
+  return (preview_buf and vim.api.nvim_buf_is_valid(preview_buf)) and preview_buf or nil
 end
 
 function M.get_source_buf()
+  sync_active_tab_state()
   if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
     return source_buf
   end
@@ -919,6 +950,8 @@ function M.compile_document(bufnr, win_width)
       push_line(full_line, i, {
         line_hl = level <= 2 and bg_hl or nil,
         spans = spans,
+        is_heading = true,
+        level = level,
       })
       prev_callout = nil
       i = i + 1
@@ -1074,6 +1107,7 @@ function M.refresh()
   local out_lines, out_meta, s2p, p2s = M.compile_document(source_buf, win_w)
   source_to_preview = s2p
   preview_to_source = p2s
+  current_out_meta = out_meta
 
   vim.bo[preview_buf].modifiable = true
   vim.bo[preview_buf].readonly = false
@@ -1143,23 +1177,121 @@ function M.debounced_refresh()
 end
 
 local function resolve_source_win()
-  if source_win and vim.api.nvim_win_is_valid(source_win) then
+  local tab = vim.api.nvim_get_current_tabpage()
+  if source_win and vim.api.nvim_win_is_valid(source_win) and vim.api.nvim_win_get_tabpage(source_win) == tab then
     if not source_buf or vim.api.nvim_win_get_buf(source_win) == source_buf then
       return source_win
     end
   end
   if source_buf and vim.api.nvim_buf_is_valid(source_buf) then
-    for _, w in ipairs(vim.api.nvim_list_wins()) do
+    for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       if w ~= preview_win and vim.api.nvim_win_get_buf(w) == source_buf then
         source_win = w
         return w
       end
     end
   end
-  if source_win and vim.api.nvim_win_is_valid(source_win) then
+  if source_win and vim.api.nvim_win_is_valid(source_win) and vim.api.nvim_win_get_tabpage(source_win) == tab then
     return source_win
   end
   return nil
+end
+
+local function attach_source_buf_autocmds()
+  local tab = vim.api.nvim_get_current_tabpage()
+  local tp = tab_previews[tab]
+  if tp and tp.buffer_augroup_id then
+    pcall(vim.api.nvim_del_augroup_by_id, tp.buffer_augroup_id)
+    tp.buffer_augroup_id = nil
+  end
+  if buffer_augroup_id then
+    pcall(vim.api.nvim_del_augroup_by_id, buffer_augroup_id)
+    buffer_augroup_id = nil
+  end
+  if not (source_buf and vim.api.nvim_buf_is_valid(source_buf)) then
+    return
+  end
+  buffer_augroup_id = vim.api.nvim_create_augroup("SuperMarkdownPreviewPaneBufTab_" .. tab .. "_" .. source_buf, { clear = true })
+  if tp then
+    tp.buffer_augroup_id = buffer_augroup_id
+  end
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
+    group = buffer_augroup_id,
+    buffer = source_buf,
+    callback = function()
+      M.debounced_refresh()
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = buffer_augroup_id,
+    buffer = source_buf,
+    callback = function()
+      if vim.api.nvim_get_current_win() ~= preview_win then
+        M.sync_from_source()
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
+    group = buffer_augroup_id,
+    buffer = source_buf,
+    callback = function()
+      local found_buf = nil
+      local found_win = nil
+      local ok_t, toc = pcall(require, "super-markdown.toc")
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        if w ~= preview_win and vim.api.nvim_win_is_valid(w) then
+          local b = vim.api.nvim_win_get_buf(w)
+          local tb = ok_t and toc.resolve_markdown_buf(b) or b
+          if tb ~= source_buf and ok_t and toc.is_markdown_buf(tb) then
+            found_buf = tb
+            found_win = w
+            break
+          end
+        end
+      end
+      if found_buf then
+        M.switch_source(found_buf, found_win)
+      else
+        M.close()
+      end
+    end,
+  })
+end
+
+function M.switch_source(new_buf, new_win)
+  if not M.is_open() then
+    return
+  end
+  if not new_buf or not vim.api.nvim_buf_is_valid(new_buf) then
+    return
+  end
+  local ok_t, toc = pcall(require, "super-markdown.toc")
+  local target_buf = ok_t and toc.resolve_markdown_buf(new_buf) or new_buf
+  if ok_t and not toc.is_markdown_buf(target_buf) then
+    return
+  end
+  if target_buf == source_buf and (not new_win or new_win == source_win) then
+    return
+  end
+
+  source_buf = target_buf
+  if new_win and vim.api.nvim_win_is_valid(new_win) and new_win ~= preview_win then
+    source_win = new_win
+  else
+    source_win = resolve_source_win()
+  end
+
+  local tab = vim.api.nvim_get_current_tabpage()
+  if tab_previews[tab] then
+    tab_previews[tab].source_buf = source_buf
+    tab_previews[tab].source_win = source_win
+  end
+
+  attach_source_buf_autocmds()
+  M.refresh()
+  pcall(function()
+    require("super-markdown.preview_pane").sync_from_source()
+  end)
 end
 
 local function map_source_to_preview(src_lnum)
@@ -1249,6 +1381,15 @@ end
 
 function M.map_preview_to_source(p_lnum)
   return map_preview_to_source(p_lnum)
+end
+
+function M.get_meta(p_lnum)
+  return current_out_meta and current_out_meta[p_lnum] or nil
+end
+
+function M.is_heading_line(p_lnum)
+  local m = M.get_meta(p_lnum)
+  return (m and m.is_heading == true) or false
 end
 
 function M.get_active_source_line()
@@ -1661,7 +1802,12 @@ function M.sync_scroll()
 end
 
 --- Jump to a heading's 1-indexed source line in both Preview Pane and Editor (even if Editor is hidden)
-function M.jump_to_heading_line(src_lnum, focus_target)
+function M.jump_to_heading_line(src_lnum, focus_target, to_top)
+  if to_top == nil then
+    to_top = (config.options and config.options.toc and config.options.toc.sidebar and config.options.toc.sidebar.scroll_to_top) ~= false
+  end
+  local view_cmd = to_top and "normal! zvzt" or "normal! zvzz"
+
   local s_win = resolve_source_win()
   local p_open = M.is_open()
   is_syncing = true
@@ -1671,7 +1817,7 @@ function M.jump_to_heading_line(src_lnum, focus_target)
     local clamped_s = math.max(1, math.min(total_s, src_lnum or 1))
     pcall(vim.api.nvim_win_set_cursor, s_win, { clamped_s, 0 })
     pcall(vim.api.nvim_win_call, s_win, function()
-      vim.cmd("normal! zvzz")
+      vim.cmd(view_cmd)
     end)
   end
 
@@ -1681,7 +1827,7 @@ function M.jump_to_heading_line(src_lnum, focus_target)
     local clamped_p = math.max(1, math.min(total_p, target_p))
     pcall(vim.api.nvim_win_set_cursor, preview_win, { clamped_p, 0 })
     pcall(vim.api.nvim_win_call, preview_win, function()
-      vim.cmd("normal! zvzz")
+      vim.cmd(view_cmd)
     end)
   end
 
@@ -1852,15 +1998,35 @@ function M.close()
     debounce_timer:close()
     debounce_timer = nil
   end
-  if augroup_id then
-    pcall(vim.api.nvim_del_augroup_by_id, augroup_id)
-    augroup_id = nil
+  local tab = vim.api.nvim_get_current_tabpage()
+  local tp = tab_previews[tab]
+  if tp then
+    if tp.global_augroup_id then
+      pcall(vim.api.nvim_del_augroup_by_id, tp.global_augroup_id)
+    end
+    if tp.buffer_augroup_id then
+      pcall(vim.api.nvim_del_augroup_by_id, tp.buffer_augroup_id)
+    end
+    tab_previews[tab] = nil
+  else
+    if global_augroup_id then
+      pcall(vim.api.nvim_del_augroup_by_id, global_augroup_id)
+      global_augroup_id = nil
+    end
+    if buffer_augroup_id then
+      pcall(vim.api.nvim_del_augroup_by_id, buffer_augroup_id)
+      buffer_augroup_id = nil
+    end
+    if augroup_id then
+      pcall(vim.api.nvim_del_augroup_by_id, augroup_id)
+      augroup_id = nil
+    end
   end
 
-  local win_to_close = preview_win
-  local buf_to_delete = preview_buf
+  local win_to_close = (tp and tp.preview_win) or preview_win
+  local buf_to_delete = (tp and tp.preview_buf) or preview_buf
   local prev_win = resolve_source_win()
-  local prev_buf = source_buf
+  local prev_buf = (tp and tp.source_buf) or source_buf
   local restore_lnum = 1
   if preview_win and vim.api.nvim_win_is_valid(preview_win) then
     local p_cur = vim.api.nvim_win_get_cursor(preview_win)[1]
@@ -1873,6 +2039,7 @@ function M.close()
   source_win = nil
   source_to_preview = {}
   preview_to_source = {}
+  current_out_meta = {}
   is_syncing = false
   last_synced_s_top = nil
   last_synced_s_cursor = nil
@@ -1909,13 +2076,22 @@ end
 
 function M.open(opts)
   opts = opts or {}
+  local cur_win = vim.api.nvim_get_current_win()
+  local cur_buf = opts.bufnr or vim.api.nvim_win_get_buf(cur_win)
+  local ok_t, toc = pcall(require, "super-markdown.toc")
+  local resolved = ok_t and toc.resolve_markdown_buf(cur_buf) or cur_buf
+
   if M.is_open() then
-    M.refresh()
+    if resolved and resolved ~= source_buf and ok_t and toc.is_markdown_buf(resolved) then
+      M.switch_source(resolved, cur_win)
+    else
+      M.refresh()
+    end
     return
   end
 
-  source_buf = opts.bufnr or vim.api.nvim_get_current_buf()
-  source_win = vim.api.nvim_get_current_win()
+  source_buf = resolved
+  source_win = cur_win
 
   local p_opts = (config.options and config.options.preview_pane) or {}
   local pos = opts.position or p_opts.position or "right"
@@ -1937,21 +2113,31 @@ function M.open(opts)
   pcall(vim.api.nvim_set_option_value, "number", false, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "relativenumber", false, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "signcolumn", "no", { win = preview_win })
-  pcall(vim.api.nvim_set_option_value, "foldcolumn", "0", { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "statuscolumn", "", { win = preview_win })
-  pcall(vim.api.nvim_set_option_value, "foldenable", false, { win = preview_win })
-  pcall(vim.api.nvim_set_option_value, "foldmethod", "manual", { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "wrap", p_opts.wrap == true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "linebreak", true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "conceallevel", 2, { win = preview_win })
   pcall(vim.api.nvim_set_option_value, "concealcursor", "nvic", { win = preview_win })
+  pcall(vim.api.nvim_set_option_value, "winfixbuf", true, { win = preview_win })
   update_winbar()
+
+  -- Attach folding to read-only preview window
+  local folds_mod = require("super-markdown.folds")
+  folds_mod.attach_preview_win(preview_win, preview_buf)
 
   vim.bo[preview_buf].buftype = "nofile"
   vim.bo[preview_buf].bufhidden = "wipe"
   vim.bo[preview_buf].swapfile = false
   vim.bo[preview_buf].filetype = "supermarkdown_preview"
+
+  local tab = vim.api.nvim_get_current_tabpage()
+  tab_previews[tab] = {
+    preview_win = preview_win,
+    preview_buf = preview_buf,
+    source_buf = source_buf,
+    source_win = source_win,
+  }
 
   -- Keymaps inside the read-only preview pane
   local function bind_preview_keys()
@@ -2030,9 +2216,28 @@ function M.open(opts)
     bmap("n", "s", function()
       M.set_sync("cycle")
     end, "Cycle Scroll Sync Mode (Both / Source→Preview / Preview→Source / Off)")
+
+    -- Cross-view fold keybindings adhering to standard Vim folds
+    bmap("n", "za", function() folds_mod.toggle_header() end, "Toggle Heading Fold across Views")
+    bmap("n", "zc", function() folds_mod.collapse_header() end, "Collapse Heading Fold across Views")
+    bmap("n", "zo", function() folds_mod.expand_header() end, "Expand Heading Fold across Views")
+    bmap("n", "zM", function() folds_mod.collapse_all() end, "Collapse All across Views")
+    bmap("n", "zR", function() folds_mod.expand_all() end, "Expand All across Views")
+    bmap("n", "zm", function() folds_mod.fold_more() end, "Fold More across Views")
+    bmap("n", "zr", function() folds_mod.fold_less() end, "Fold Less across Views")
+    bmap("n", "<Space>", function() folds_mod.toggle_header() end, "Toggle Heading Fold across Views")
+    bmap("n", "-", function() folds_mod.collapse_header() end, "Collapse Heading Fold across Views")
+    bmap("n", "+", function() folds_mod.expand_header() end, "Expand Heading Fold across Views")
+
     bmap("n", "<CR>", function()
-      M.jump_to_source()
-    end, "Jump to (or Show) Editable Source Buffer at Current Line")
+      local p_cur = vim.api.nvim_win_get_cursor(preview_win)[1]
+      local meta = M.get_meta(p_cur)
+      if meta and meta.is_heading then
+        folds_mod.toggle_header()
+      else
+        M.jump_to_source()
+      end
+    end, "Toggle Heading Fold / Jump to Editable Source Buffer at Current Line")
     bmap({ "n", "v", "x", "s" }, "<2-LeftMouse>", function()
       local mode = vim.api.nvim_get_mode().mode
       if mode:match("^[vVsS\22\19]") then
@@ -2080,34 +2285,53 @@ function M.open(opts)
     M.start_auto_refresh()
   end
 
-  -- Attach bidirectional live-sync autocommands on source and preview buffers/windows
-  augroup_id = vim.api.nvim_create_augroup("SuperMarkdownPreviewPane_" .. source_buf, { clear = true })
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
-    group = augroup_id,
-    buffer = source_buf,
-    callback = function()
-      M.debounced_refresh()
+  -- Attach live-sync autocommands
+  global_augroup_id = vim.api.nvim_create_augroup("SuperMarkdownPreviewPaneTab_" .. tab, { clear = true })
+  augroup_id = global_augroup_id
+  if tab_previews[tab] then
+    tab_previews[tab].global_augroup_id = global_augroup_id
+  end
+
+  -- Auto-switch preview when focusing another markdown buffer
+  vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter", "BufWinEnter" }, {
+    group = global_augroup_id,
+    callback = function(args)
+      if not M.is_open() then return end
+      local win = vim.api.nvim_get_current_win()
+      local buf = args.buf
+      if not buf or not vim.api.nvim_buf_is_valid(buf) or buf == 0 then
+        buf = vim.api.nvim_win_get_buf(win)
+      end
+      if buf == preview_buf then return end
+      local ok_s, sb = pcall(require, "super-markdown.toc.sidebar")
+      if ok_s and buf == sb.get_buf() then return end
+
+      local p_opts = (config.options and config.options.preview_pane) or {}
+      if p_opts.auto_switch_buffer == false then return end
+
+      local ok_tc, tc = pcall(require, "super-markdown.toc")
+      local target_buf = ok_tc and tc.resolve_markdown_buf(buf) or buf
+      if ok_tc and tc.is_markdown_buf(target_buf) then
+        if target_buf ~= source_buf then
+          M.switch_source(target_buf, win)
+        elseif win ~= source_win and vim.api.nvim_win_is_valid(win) then
+          source_win = win
+          M.sync_from_source()
+        end
+      end
     end,
   })
+
   vim.api.nvim_create_autocmd("FocusGained", {
-    group = augroup_id,
+    group = global_augroup_id,
     callback = function()
       if M.is_auto_refresh_enabled() then
         M.check_and_refresh_buffers(false)
       end
     end,
   })
-  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-    group = augroup_id,
-    buffer = source_buf,
-    callback = function()
-      if vim.api.nvim_get_current_win() ~= preview_win then
-        M.sync_from_source()
-      end
-    end,
-  })
   vim.api.nvim_create_autocmd("CursorMoved", {
-    group = augroup_id,
+    group = global_augroup_id,
     buffer = preview_buf,
     callback = function()
       if vim.api.nvim_get_current_win() == preview_win then
@@ -2122,14 +2346,14 @@ function M.open(opts)
     end,
   })
   vim.api.nvim_create_autocmd({ "BufEnter", "WinEnter" }, {
-    group = augroup_id,
+    group = global_augroup_id,
     buffer = preview_buf,
     callback = function()
       bind_preview_keys()
     end,
   })
   vim.api.nvim_create_autocmd("WinScrolled", {
-    group = augroup_id,
+    group = global_augroup_id,
     callback = function()
       if is_syncing or not M.is_open() then
         return
@@ -2142,30 +2366,43 @@ function M.open(opts)
     end,
   })
   vim.api.nvim_create_autocmd({ "WinResized", "VimResized" }, {
-    group = augroup_id,
+    group = global_augroup_id,
     callback = function()
       M.debounced_refresh()
     end,
   })
-  vim.api.nvim_create_autocmd({ "BufWipeout", "BufDelete" }, {
-    group = augroup_id,
-    buffer = source_buf,
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    group = global_augroup_id,
+    buffer = preview_buf,
     callback = function()
+      preview_buf = nil
       M.close()
     end,
   })
   vim.api.nvim_create_autocmd("WinClosed", {
-    group = augroup_id,
+    group = global_augroup_id,
     pattern = tostring(preview_win),
     callback = function()
-      preview_win = nil
-      preview_buf = nil
+      M.close()
     end,
   })
+
+  attach_source_buf_autocmds()
 end
 
 function M.toggle(opts)
   if M.is_open() then
+    local cur_win = vim.api.nvim_get_current_win()
+    local cur_buf = vim.api.nvim_win_get_buf(cur_win)
+    if cur_win ~= preview_win and cur_buf ~= preview_buf then
+      local ok_t, toc = pcall(require, "super-markdown.toc")
+      local resolved = ok_t and toc.resolve_markdown_buf(cur_buf) or cur_buf
+      if resolved and resolved ~= source_buf and ok_t and toc.is_markdown_buf(resolved) then
+        M.switch_source(resolved, cur_win)
+        vim.notify("SuperMarkdown: Live Preview switched to active buffer 󰄵", vim.log.levels.INFO)
+        return
+      end
+    end
     M.close()
     vim.notify("SuperMarkdown: Live Preview Pane Closed 󰄱", vim.log.levels.INFO)
   else

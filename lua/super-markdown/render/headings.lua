@@ -65,6 +65,13 @@ function M.render(bufnr, ns_id, lnum, line, opts, sec_info)
     local c = sec_info.counts
     local badges = {}
 
+    -- Human Review Status
+    if sec_info.review_status == "APPROVED" then
+      table.insert(badges, { "  󰄵 APPROVED", "SuperMarkdownReviewApproved" })
+    elseif sec_info.review_status == "REJECTED" then
+      table.insert(badges, { "  󰀦 REVISION", "SuperMarkdownReviewRejected" })
+    end
+
     if c.total_tasks and c.total_tasks > 0 then
       local done = c.checked or 0
       local hl = (done == c.total_tasks) and "SuperMarkdownCheckboxChecked" or "SuperMarkdownCheckboxProgress"
@@ -77,6 +84,14 @@ function M.render(bufnr, ns_id, lnum, line, opts, sec_info)
 
     if c.question and c.question > 0 then
       table.insert(badges, { string.format("  󰋽 %d", c.question), "SuperMarkdownCheckboxQuestion" })
+    end
+
+    if c.risks and c.risks > 0 then
+      table.insert(badges, { string.format("  󰳦 %d risk%s", c.risks, c.risks > 1 and "s" or ""), "SuperMarkdownRiskHigh" })
+    end
+
+    if c.scenarios and c.scenarios > 0 then
+      table.insert(badges, { string.format("  󰄵 %d AC", c.scenarios), "SuperMarkdownH3" })
     end
 
     if sec_info.refs and #sec_info.refs > 0 then

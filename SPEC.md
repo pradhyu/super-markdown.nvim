@@ -49,6 +49,16 @@ Markdown is the lingua franca of documentation, research, task tracking, technic
    - **Smart List Continuation**: Automatically continues unordered (`- `, `* `) and ordered (`1. `) lists; deletes prefix on blank double-enter.
    - **Smart Link Follow & Paste**: `gx` opens external URLs in browser or local markdown links in Neovim; pasting URLs over selected text automatically creates `[selection](url)`.
 
+5. **AI Agent Spec Eyeballing & Human Review Engine**:
+   - As Markdown becomes the new code for specification-driven agent workflows, humans must quickly verify, review, and eyeball agent-generated files.
+   - **Interactive Spec Eyeballer & Scorecard HUD** (`:SuperMarkdown eyeball` / `<leader>mE`): Bird's-eye metrics, read/skim times, readiness scorecard, and interactive section review table (`<CR>`, `a`, `r`, `q`, `s`, `e`).
+   - **Executive Skim / X-Ray Mode** (`:SuperMarkdown skim` / `<leader>msm`): Dims paragraph prose, letting structural headings, tables, BDD scenarios, callouts, and diagrams pop for 10x-speed reviews.
+   - **AI Boilerplate & Fluff Radar**: Identifies and dims conversational chatbot filler (`"Certainly!"`, `"Without further ado"`).
+   - **Critical Hazard Radar** (`]w` / `[w`): Flags destructive operations (`rm -rf`, `DROP TABLE`, `kill -9`), hardcoded credentials, security bypasses, and breaking changes.
+   - **Acceptance Criteria & BDD Scenarios** (`]s` / `[s`): Formatted badges for Given / When / Then steps and `AC-*` codes.
+   - **Full Human Review Lifecycle**: Stamp section approvals (`<leader>mra`), rejections (`<leader>mrr`), agent directives (`<leader>mrq`), human review comments (`<leader>mrc`), approve all (`<leader>mrA`), and export compiled review feedback prompts (`<leader>mre`).
+   - **Zero-Overhead Spec Statusline**: `require("super-markdown").statusline()` for real-time spec telemetry in statusline/winbar.
+
 ---
 
 ## 2. Architecture & Module Design
@@ -183,6 +193,32 @@ super-markdown.nvim/
   Detects `[text](target)` under cursor.
   If `target` begins with `http://` or `https://`, opens via `xdg-open` / browser.
   If `target` is a file path (e.g. `./notes.md`), opens in Neovim buffer.
+
+### 3.5 Cross-View Expand & Collapse Synchronization (`folds.lua`)
+- **Three-Surface Synchronization**:
+  Expand and collapse operates like a surround text object synchronized across the **TOC Sidebar**, the **Edit Markdown View**, and the **Live Preview Pane**.
+- **Tree-Aware Hierarchical Collapsing**:
+  - Headings calculate their subtree descendants; collapsing a parent heading in the sidebar hides its children and displays a `▸ ` prefix with count badge `⋯ (+N)`.
+  - Expanding restores the subtree with `▾ ` prefix.
+- **Universal Vim Fold Mappings**:
+  - `za` / `<Space>`: Toggle fold under cursor across sidebar, edit view, and preview.
+  - `zc` / `-`: Collapse heading and children across all active views.
+  - `zo` / `+`: Expand heading across all active views.
+  - `zM`: Collapse all sections across all three views.
+  - `zR`: Expand all sections across all three views.
+  - `zm`: Fold more (decrease fold level across all views).
+  - `zr`: Fold less (increase fold level across all views).
+  - `<CR>` in preview pane: Context-aware toggle on headings, jump-to-source on body text.
+
+### 3.6 Sticky Stacked Headers, TOC Scroll-to-Top & Dynamic Document Focus (`sticky.lua` & `sidebar.lua`)
+- **Dynamic Document Focus & Auto-Switching (`auto_switch_buffer = true`)**:
+  The docked TOC sidebar automatically stays open and reloads itself to display the table of contents of whichever markdown document enters focus (`BufEnter` / `WinEnter`), resolving splits and preview panes to their respective markdown source. Collapsed heading state is isolated per buffer so collapsing in file A never bleeds into file B.
+- **Scroll-to-Top Option**:
+  When navigating in TOC sidebar, target heading snaps directly to window row 0 (`zt`) rather than centering (`zz`), allowing users to read down from the start of the section. Toggleable on the fly with `z` or `Z`.
+- **Sticky Stacked Headers**:
+  As the user scrolls past parent headings in editor or preview pane, ancestor headings that have scrolled past `topline` remain pinned at the top of the viewing screen in a stacked context float. Shows active section hierarchy at a glance. Interactive click / `<CR>` jumps to any stacked parent. Toggleable with `<leader>mH` / `:SuperMarkdown sticky`.
+- **Deep 6-Level Hierarchy (`examples/showcase.md`)**:
+  Full H1 through H6 hierarchy supports progressive collapsing and expanding via `zm` (fold more) and `zr` (fold less).
 
 ---
 

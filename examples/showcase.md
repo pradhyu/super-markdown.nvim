@@ -168,3 +168,65 @@ public record RenderJob(String documentId, int lineCount, Duration elapsed) {
 - Visit the [Official Neovim Documentation](https://neovim.io)
 - Explore the [Kitty Terminal Graphics Protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/)
 - Check out [super-markdown.nvim Specification](./SPEC.md)
+
+---
+
+## 7. Deep Architecture Hierarchy (Testing `zr` and `zm` Folds)
+
+This section provides a complete 6-level deep heading hierarchy (H1 → H2 → H3 → H4 → H5 → H6) to exercise progressive outline folding, `zm` (fold more), `zr` (fold less), `zM` (collapse all), `zR` (expand all), and cross-view synchronization between the Table of Contents sidebar, editor view, and preview pane.
+
+### 7.1 Distributed Agent Cluster & Consensus
+
+The distributed agent cluster manages multi-model consensus, task dispatching, and state machine replication.
+
+#### 7.1.1 Consensus Engine & State Machine
+
+Distributed log replication based on a modified Raft consensus protocol with dynamic peer configuration.
+
+##### 7.1.1.1 Raft Leader Election Protocol
+
+Leader election handles node failure detection, lease negotiation, and split-brain prevention under network partitions.
+
+###### 7.1.1.1.1 Heartbeat Interval & Lease Renewal Constraints
+
+Heartbeat intervals must be strictly tuned between 150ms and 300ms to guarantee timely failure detection without causing spurious elections:
+
+- Base heartbeat tick: 50ms interval
+- Election timeout jitter: uniform `rand(150, 300)` ms
+- Leader lease TTL: 250ms with atomic CAS renewal in shared memory
+
+###### 7.1.1.1.2 Split-Brain Prevention Quorum Thresholds
+
+A valid quorum requires a strict mathematical majority of active voting cluster nodes:
+
+$$Q = \lfloor N/2 \rfloor + 1$$
+
+In case of network partition, any partition with fewer than $Q$ nodes drops immediately to read-only follower mode to preserve consistency.
+
+##### 7.1.1.2 WAL Log Replication Pipeline
+
+Write-Ahead Log (WAL) records are streamed asynchronously to follower nodes using zero-copy memory buffers.
+
+###### 7.1.1.2.1 Batch Pipeline Sharding Rules
+
+Incoming log streams are partitioned by hashing the entity correlation ID:
+
+- Hash algorithm: MurmurHash3 (64-bit seed)
+- Segment rollover threshold: 64 MB per file
+- Compression codec: Zstandard level 3 for active segments, level 19 for cold archive tier
+
+#### 7.1.2 Vector Indexing & Memory Subsystem
+
+Real-time retrieval augmented generation indexing for agent scratchpads, long-term memory, and codebase graphs.
+
+##### 7.1.2.1 HNSW Graph Optimization Strategy
+
+Hierarchical Navigable Small World graphs are maintained in memory with background disk serialization.
+
+###### 7.1.2.1.1 Quantization & SIMD Vector Alignment
+
+Vectors are quantized using product quantization (PQ8) with AVX-512 distance calculation kernels:
+
+- Vector dimensions: 1536 floating-point values
+- Sub-vector quantization: 8 dimensions per codebook
+- Memory alignment: 64-byte boundaries for zero-penalty SIMD cacheline loading

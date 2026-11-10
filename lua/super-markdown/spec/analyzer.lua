@@ -164,6 +164,12 @@ function M.analyze(bufnr)
     codeblocks = 0,
     impl_refs = 0,
     test_refs = 0,
+    risks = 0,
+    fluff = 0,
+    scenarios = 0,
+    approved = 0,
+    rejected = 0,
+    review_notes = 0,
   }
 
   local current_section = nil
@@ -190,7 +196,11 @@ function M.analyze(bufnr)
           diagrams = 0,
           tables = 0,
           codeblocks = 0,
+          risks = 0,
+          fluff = 0,
+          scenarios = 0,
         },
+        review_status = nil,
         refs = {},
         reqs = {},
       }
@@ -250,7 +260,11 @@ function M.analyze(bufnr)
             diagrams = 0,
             tables = 0,
             codeblocks = 0,
+            risks = 0,
+            fluff = 0,
+            scenarios = 0,
           },
+          review_status = nil,
           refs = {},
           reqs = {},
         }
@@ -361,7 +375,50 @@ function M.analyze(bufnr)
               section = sec.title,
               bufnr = bufnr,
             })
-          elseif ctype == "WARNING" or ctype == "CAUTION" or ctype == "DANGER" or ctype == "IMPORTANT" then
+          elseif ctype == "APPROVED" then
+            sec.review_status = "APPROVED"
+            totals.approved = totals.approved + 1
+            table.insert(all_items, {
+              kind = "review",
+              icon = "󰄵 ",
+              lnum = lnum,
+              text = "[APPROVED] " .. (callout_rest ~= "" and callout_rest or sec.title),
+              section = sec.title,
+              bufnr = bufnr,
+            })
+          elseif ctype == "REJECTED" then
+            sec.review_status = "REJECTED"
+            totals.rejected = totals.rejected + 1
+            table.insert(all_items, {
+              kind = "review",
+              icon = "󰀦 ",
+              lnum = lnum,
+              text = "[REJECTED] " .. (callout_rest ~= "" and callout_rest or sec.title),
+              section = sec.title,
+              bufnr = bufnr,
+            })
+          elseif ctype == "REVIEW" then
+            totals.review_notes = totals.review_notes + 1
+            table.insert(all_items, {
+              kind = "review",
+              icon = "󰋽 ",
+              lnum = lnum,
+              text = "[REVIEW NOTE] " .. (callout_rest ~= "" and callout_rest or sec.title),
+              section = sec.title,
+              bufnr = bufnr,
+            })
+          elseif ctype == "RISK" or ctype == "SECURITY" or ctype == "BREAKING" or ctype == "DANGER" or ctype == "CAUTION" then
+            sec.counts.risks = (sec.counts.risks or 0) + 1
+            totals.risks = totals.risks + 1
+            table.insert(all_items, {
+              kind = "risk",
+              icon = "󰳦 ",
+              lnum = lnum,
+              text = string.format("[%s] %s", ctype, callout_rest ~= "" and callout_rest or sec.title),
+              section = sec.title,
+              bufnr = bufnr,
+            })
+          elseif ctype == "WARNING" or ctype == "IMPORTANT" then
             table.insert(all_items, {
               kind = "callout",
               icon = "󰀦 ",
@@ -370,6 +427,60 @@ function M.analyze(bufnr)
               section = sec.title,
               bufnr = bufnr,
             })
+          end
+        end
+
+        -- 4b. Critical Risks Detection
+        local ok_r, risks_mod = pcall(require, "super-markdown.render.risks")
+        if ok_r and risks_mod.RULES then
+          for _, rule in ipairs(risks_mod.RULES) do
+            if line:find(rule.pattern) then
+              sec.counts.risks = (sec.counts.risks or 0) + 1
+              totals.risks = totals.risks + 1
+              table.insert(all_items, {
+                kind = "risk",
+                icon = "󰳦 ",
+                lnum = lnum,
+                text = string.format("%s: %s", rule.label, vim.trim(line)),
+                section = sec.title,
+                bufnr = bufnr,
+              })
+              break
+            end
+          end
+        end
+
+        -- 4c. Acceptance Criteria & BDD Scenarios (Given/When/Then, AC-*)
+        if line:match("^%s*[Ss]cenario") or line:match("%f[%a]AC%-%d+") then
+          sec.counts.scenarios = (sec.counts.scenarios or 0) + 1
+          totals.scenarios = totals.scenarios + 1
+          table.insert(all_items, {
+            kind = "bdd",
+            icon = "󰄵 ",
+            lnum = lnum,
+            text = vim.trim(line),
+            section = sec.title,
+            bufnr = bufnr,
+          })
+        end
+
+        -- 4d. AI Boilerplate & Fluff
+        local ok_f, fluff_mod = pcall(require, "super-markdown.render.fluff")
+        if ok_f and fluff_mod.PATTERNS then
+          for _, rule in ipairs(fluff_mod.PATTERNS) do
+            if line:find(rule.pattern) then
+              sec.counts.fluff = (sec.counts.fluff or 0) + 1
+              totals.fluff = totals.fluff + 1
+              table.insert(all_items, {
+                kind = "fluff",
+                icon = "󰚩 ",
+                lnum = lnum,
+                text = string.format("%s: %s", rule.label, vim.trim(line)),
+                section = sec.title,
+                bufnr = bufnr,
+              })
+              break
+            end
           end
         end
 

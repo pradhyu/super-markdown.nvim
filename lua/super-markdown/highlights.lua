@@ -86,6 +86,18 @@ function M.setup()
   set_hl("SuperMarkdownCalloutInfo", { fg = id_fg, bold = true })
   set_hl("SuperMarkdownCalloutQuestion", { fg = kw_fg, bold = true })
   set_hl("SuperMarkdownCalloutAbstract", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownCalloutApproved", { fg = str_fg, bold = true })
+  set_hl("SuperMarkdownCalloutRejected", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownCalloutAgent", { fg = kw_fg, bold = true })
+  set_hl("SuperMarkdownCalloutDecision", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownCalloutAssumption", { fg = const_fg, bold = true })
+  set_hl("SuperMarkdownCalloutSecurity", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownCalloutBreaking", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownCalloutPerformance", { fg = type_fg, bold = true })
+  set_hl("SuperMarkdownCalloutRisk", { fg = const_fg, bold = true })
+  set_hl("SuperMarkdownCalloutRationale", { fg = fn_fg, bold = true })
+  set_hl("SuperMarkdownCalloutPrompt", { fg = kw_fg, bold = true })
+  set_hl("SuperMarkdownCalloutReview", { fg = const_fg, bold = true })
 
   -- Tables
   set_hl("SuperMarkdownTableBorder", { fg = float_border })
@@ -157,6 +169,29 @@ function M.setup()
     link = has_diag and "DiagnosticUnnecessary" or nil,
     default = true,
   })
+
+  -- Executive Skim Mode (Prose Dimmer)
+  set_hl("SuperMarkdownSkimDimmed", { fg = comment_fg, italic = true })
+  set_hl("SuperMarkdownSkimLine", {})
+
+  -- AI Boilerplate & Fluff Radar
+  set_hl("SuperMarkdownAiFluff", { fg = comment_fg, strikethrough = true, italic = true })
+  set_hl("SuperMarkdownAiFluffBadge", { fg = const_fg, italic = true })
+
+  -- Critical Risk & Destructive Impact Radar
+  set_hl("SuperMarkdownRiskHigh", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownRiskSec", { fg = kw_fg, bold = true })
+
+  -- Acceptance Criteria (AC) & BDD (Given / When / Then)
+  set_hl("SuperMarkdownBddGiven", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownBddWhen", { fg = const_fg, bold = true })
+  set_hl("SuperMarkdownBddThen", { fg = str_fg, bold = true })
+  set_hl("SuperMarkdownBddAnd", { fg = comment_fg })
+
+  -- Human Review & Approval Status Badges
+  set_hl("SuperMarkdownReviewApproved", { fg = str_fg, bold = true })
+  set_hl("SuperMarkdownReviewRejected", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownReviewQuestion", { fg = kw_fg, bold = true })
 end
 
 -- Auto-update highlights on colorscheme switch

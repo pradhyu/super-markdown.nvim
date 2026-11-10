@@ -83,28 +83,59 @@ Write ```` ```mermaid ```` diagrams and have them **render automatically in line
 - **Universal Fallback**: Automatically integrates with `Snacks.picker` or `vim.ui.select` if Telescope is not installed.
 - **Document Outline Sidebar (`<leader>ms`)**:
   - Split outline sidebar displaying the document table of contents.
+  - **Dynamic Document Focus & Auto-Switching (`auto_switch_buffer = true`)**: The sidebar stays open and docked, automatically reloading itself to reflect whichever markdown file or window is currently focused (`BufEnter` / `WinEnter`). Switching between markdown splits (e.g. between `SPEC.md`, `ARCHITECTURE.md`, or `examples/showcase.md`) seamlessly updates the TOC outline and sync highlighting to match the active document.
+  - **Per-Document State Isolation**: Collapsed sections are tracked per buffer, so collapsing a section in File A does not affect File B.
+  - **Unified Docked Workspace**: A single docked sidebar dynamically serves all markdown buffers across your editor without cluttering splits with redundant sidebars.
   - Live scrolling: moving up and down the sidebar automatically scrolls the markdown viewer to the highlighted section.
+  - **Scroll-to-Top Positioning (`scroll_to_top = true`)**: When moving selection or jumping in the sidebar, places the target heading right at the top of the viewing screen (`zt`) instead of centering it (`zz`), so you can read downward from the section header immediately.
+  - **Instant Top/Center Toggle (`z` / `Z` in sidebar or `<leader>mzT`)**: Toggle between Top (`zt`) and Center (`zz`) positioning on the fly. The active mode is displayed in the sidebar banner (`Top(z)` ↔ `Ctr(z)`).
   - Pressing `<CR>` jumps to the selected heading and switches focus directly to the markdown viewer.
 
-### 6. Automated Table Alignment & Authoring Tools
+### 6. Sticky Stacked Headers (Pinned Section Context)
+- **Pinned Context Stack (`<leader>mH` / `:SuperMarkdown sticky`)**:
+  - As you scroll down through long specifications in either the **editor** or the **live preview pane**, parent headings that have scrolled past the top of the window are pinned in a lightweight sticky context float at the top of the screen:
+    ```
+     󰲡 1. System Architecture
+       󰲣 1.1 Backend Services
+         󰲥 1.1.1 Authentication Pipeline
+    ────────────────────────────────────────────
+    ```
+  - You always know exactly which section, subsection, and parent architecture boundary you are currently inside.
+  - **Auto-Stack & Auto-Shrink**: As you scroll deeper, subsections stack; as you scroll back up, headings pop off the stack as soon as they become visible in the buffer.
+  - **Interactive Jump**: Clicking with mouse or pressing `<CR>` on any stacked header jumps directly to that section.
+  - **Fully Optional**: Easily enabled or disabled via configuration (`sticky.enabled = true`), shortcut (`<leader>mH`), sidebar (`X`), or command (`:SuperMarkdown sticky`).
+
+### 7. Automated Table Alignment & Authoring Tools
 - **Automated In-Line Column Alignment**: Ragged or unaligned Markdown tables are automatically rendered with perfectly aligned columns, custom alignment indicators (`:---`, `:---:`, `---:`), and box-drawing borders without modifying the buffer text.
 - **Source Formatter (`<leader>mtf`)**: Explicitly formats and snaps the buffer text itself into clean Markdown spacing.
 - **Table Cell Navigation**: Press `<Tab>` to jump to the next cell and `<S-Tab>` to the previous cell. Pressing `<Tab>` on the last cell automatically adds a new row!
 - **Smart List Continuation**: Pressing `<CR>` in insert mode automatically continues unordered (`- `, `* `, `+ `) and numbered (`1. `) lists.
 - **Smart Link Follow & Paste (`<leader>ml` / `gx`)**: Open URLs in your browser or jump directly to local Markdown notes.
 
-### 7. Hierarchical Heading Folding with Gutter Indicators
-- **Gutter Fold Indicators (`+` and `-`)**:
-  - Open folds display `-` in the fold column, closed folds display `+`, and nested lines display `│`.
-- **Hierarchical Folds**:
-  - H1 headings fold all subheadings down to the next H1; nested H2–H6 headings create structured sub-folds.
-- **Stylized Fold Text**:
-  - Closed folds render clean headings with level icons and line counts: ` 󰲡 Section Name  ⋯ (12 lines)`.
-- **Fold All & Unfold All**:
-  - Fold all sections at once via `:SuperMarkdown fold_all` or `<leader>mzM` (`zM`).
-  - Unfold all sections at once via `:SuperMarkdown unfold_all` or `<leader>mzR` (`zR`).
-  - Toggle individual section folds via `:SuperMarkdown fold_toggle` or `<leader>mza` (`za`).
-  - Fold to specific depth via `:SuperMarkdown fold_level <N>`.
+### 7. Unified Expand, Collapse & Surround Folding Across All Views
+Folding in `super-markdown.nvim` works like surround text objects—synchronized across all 3 active surfaces: the **TOC Sidebar**, the **Edit Markdown View**, and the **Live Preview Pane**:
+
+- **Cross-View Synchronization**:
+  - Collapsing or expanding any heading in the **sidebar** collapses or expands its fold in both the **edit markdown view** and the **read-only live preview pane**.
+  - Collapsing or expanding in the **editor** or **preview pane** instantly updates the sidebar outline (hiding/revealing nested descendant headings and updating the `▸` / `▾` indicator and `⋯ (+N)` count).
+  - Collapsing all (`zM`) or expanding all (`zR`) operates globally across sidebar, editor, and preview simultaneously.
+- **Hierarchical Tree Outline in Sidebar**:
+  - Headings with nested child sections show `▾ ` when expanded and `▸ ` when collapsed.
+  - Collapsing a parent heading hides all its descendant subheadings from the sidebar list and displays a count badge (e.g. `▸ 󰲡 Architecture Overview  ⋯ (+3)`).
+- **Universal Vim Fold Shortcuts across Sidebar, Editor & Preview**:
+  - `za` or `<Space>`: Toggle heading fold (synchronized across sidebar, editor & preview).
+  - `zc` or `-`: Collapse heading & all child subheadings (synchronized).
+  - `zo` or `+`: Expand heading (synchronized).
+  - `zM` or `<leader>mzM`: Collapse all sections across all three views.
+  - `zR` or `<leader>mzR`: Expand all sections across all three views.
+  - `zm`: Fold more (decrease foldlevel / collapse deepest visible level).
+  - `zr`: Fold less (increase foldlevel / expand next collapsed level).
+  - **Deep 6-Level Hierarchy Testing**: Supports deep H1 → H2 → H3 → H4 → H5 → H6 nesting; `zm` and `zr` step progressively through each level across all three views (see `examples/showcase.md` for a full 6-level architecture demonstration).
+  - `<CR>` in preview pane: If on a heading line, toggles fold in place; if on body text, jumps to editable source at that exact line.
+  - `<CR>` in sidebar: Jumps to and unfolds heading in editor and preview.
+- **Stylized Fold Text & Gutter Indicators**:
+  - Gutter indicators: `-` for open fold, `+` for closed fold, `│` for fold separator line.
+  - Fold text displays folder icon, heading level icon, section title, spec task completion summary (`[󰄵 3/5 · 󰀦 1 · 󰋽 1]`), and folded line count.
 
 ### 8. Spec-Driven Development (SDD) & LLM Workflow Suite
 Built for modern developers who write, maintain, and navigate technical specifications to drive LLM code and test generation:
@@ -130,26 +161,49 @@ Built for modern developers who write, maintain, and navigate technical specific
   - Execute `lua`, `bash`/`sh`, `python`, or `javascript` code blocks directly inside your spec and render live `󰄵 PASS` / `󰀦 FAIL` virtual lines beneath the block.
 
 ### 9. Human-in-the-Loop Review & AI Agent Change Eyeballer
-As AI agents increasingly author, modify, and execute technical specifications ("Markdown is the new code"), humans must read, review, and eyeball changes with zero cognitive friction:
+As markdowns have become the **new executable code for specifications written by AI agents** (Cursor, Claude Code, Cline, Aider, Devin, Gemini CLI, Copilot Workspace), human reviewers need to quickly go over, review, and eyeball massive agent-generated markdown files without getting drowned in boilerplate prose:
+
+- **Interactive Spec Eyeballer & Scorecard HUD (`<leader>mE` / `:SuperMarkdown eyeball`)**:
+  - Interactive floating dashboard giving you an executive birds-eye view:
+    - **Speed & Length Metrics**: Total lines, word count, estimated deep reading time vs 30-second skim time.
+    - **Spec Readiness Score**: (0-100) combining task completion, acceptance criteria coverage, unresolved questions, blockers, and risk flags.
+    - **Review Matrix by Section**: Displays each section with a review badge (`[󰄵 APPROVED]`, `[󰀦 REVISION]`, `[󰋽 QUESTION]`, or `[󰄱 UNREVIEWED]`), task tally (`󰄵 4/4`), risk tally (`󰳦 1 risk`), and line number.
+    - **Single-Key Actions inside HUD**: Press `<CR>` to jump to section, `a` to approve, `r` to request revision, `q` to add directive, `s` to toggle Skim mode, `e` to export feedback prompt!
+- **Executive Skim / X-Ray Mode (`<leader>msm` / `:SuperMarkdown skim`)**:
+  - Automatically dims dense prose paragraphs, instantly highlighting only the structural skeleton of the spec: headings, tables, BDD scenarios, checklists, callouts, and Mermaid diagrams. Eyeball a 2,000-line spec in under 30 seconds!
+- **AI Boilerplate & Fluff Radar**:
+  - Automatically identifies, dims, and flags conversational AI filler (*"Certainly!"*, *"Without further ado"*, *"As an AI language model"*, *"In this section we will discuss..."*) with `󰚩 AI Fluff` badges.
+- **Critical Risk & Destructive Operation Radar**:
+  - High-visibility margin badges and highlights for destructive commands (`rm -rf`, `DROP TABLE`, `kill -9`), hardcoded secrets (`password: '...'`, `token: '...'`), security hazards (`chmod 777`, `verify=False`), and breaking changes (`BREAKING:`, `schema migration`).
+- **Acceptance Criteria & BDD Scenarios (Given / When / Then)**:
+  - Formatted pill badges for BDD steps (`󰄱 Given `, `󰄱 When `, `󰄵 Then `, ` ↳ And `) and `AC-*` requirement IDs.
+- **Full Human Review Lifecycle & Agent Prompt Export**:
+  - `<leader>mra` (`:SuperMarkdown review_approve`): Approve active section with reviewer timestamp.
+  - `<leader>mrr` (`:SuperMarkdown review_reject`): Request revisions from AI agent on active section.
+  - `<leader>mrq` (`:SuperMarkdown review_question`): Add directive/question for AI agent (`> [!QUESTION] @agent: ...`).
+  - `<leader>mrc` (`:SuperMarkdown review_comment`): Insert inline human review comment (`> [!REVIEW] @human: ...`).
+  - `<leader>mrA` (`:SuperMarkdown review_approve_all`): Stamp entire document as `APPROVED` with reviewer username and date.
+  - `<leader>mrR` (`:SuperMarkdown review_reject_all`): Stamp entire document as `REJECTED` / `CHANGES_REQUESTED`.
+  - `<leader>mre` (`:SuperMarkdown review_export`): Assembles all review comments, questions, rejections, and blockers into a structured prompt copied to your clipboard and opened in the prompt studio to dispatch back to the agent!
 - **Agent Change Eyeballer HUD (`<leader>mdc` / `:SuperMarkdown diff_hud`)**:
   - Floating dashboard analyzing changes against `git HEAD`: total insertions/modifications/deletions, which specific sections the agent touched, which requirements were modified, and which tasks were completed. Press `<CR>` on any hunk to jump directly to it.
 - **In-Buffer Spec Change Highlights (`<leader>md` / `:SuperMarkdown diff`)**:
-  - Live gutter indicators (`▎+`, `▎~`, `▎-`) and inline change badges (`󰜥 +3 Added`, `󰜥 ~2 Modified`, `▾ Deleted lines`) so you can instantly eyeball what the agent altered.
-- **TOC Agent Change Badges**:
-  - Headings in the TOC Sidebar and Telescope picker dynamically rollup changes (`[+3 ~1]`), allowing you to spot agent edits across 1000-line specs in a single glance.
-- **Semantic Spec Navigation**:
-  - `]c` / `[c`: Jump to next / previous agent change.
-  - `]r` / `[r`: Jump to next / previous requirement ID (`REQ-*`, `AC-*`, `ADR-*`).
-  - `]q` / `[q`: Jump to next / previous open question (`[?]` or `> [!QUESTION]`).
-  - `]b` / `[b`: Jump to next / previous blocker (`[!]` or `> [!CAUTION]`).
+  - Live gutter indicators (`▎+`, `▎~`, `▎-`) and inline change badges (`󰜥 +3 Added`, `󰜥 ~2 Modified`, `▾ Deleted lines`).
+- **Expanded Callouts for Agent Specifications**:
+  - Distinct styling for `[!APPROVED]`, `[!REJECTED]`, `[!AGENT]`, `[!DECISION]`, `[!ASSUMPTION]`, `[!SECURITY]`, `[!BREAKING]`, `[!PERFORMANCE]`, `[!RISK]`, `[!RATIONALE]`, `[!PROMPT]`, `[!REVIEW]`.
+- **Rapid Eyeball Navigation Jumps**:
+  - `]w` / `[w`: Jump to next / previous critical risk or destructive operation.
+  - `]a` / `[a`: Jump to next / previous ambiguity or AI fluff phrase.
+  - `]s` / `[s`: Jump to next / previous BDD scenario or acceptance criteria (`AC-*`).
+  - `]k` / `[k`: Jump to next / previous human review note or directive.
+  - `]c` / `[c`: Jump to next / previous agent change hunk.
+  - `]r` / `[r`: Jump to next / previous requirement ID (`REQ-*`, `AC-*`).
+  - `]q` / `[q`: Jump to next / previous open question (`[?]`).
+  - `]b` / `[b`: Jump to next / previous blocker (`[!]`).
   - `]t` / `[t`: Jump to next / previous pending task (`[ ]`, `[/]`).
-- **Human Review & Directive Workflow**:
-  - `<leader>mra` (`:SuperMarkdown review_approve`): Stamp section with `> [!APPROVED] Reviewed by human on <date>`.
-  - `<leader>mrq` (`:SuperMarkdown review_question`): Leave an inline directive for the agent (`> [!QUESTION] @agent: ...`) which is automatically prioritized in LLM prompts.
-  - `<leader>mrr` (`:SuperMarkdown review_reject`): Request revisions from the agent.
-- **Active Section Breadcrumb & Metric HUD (`<leader>mb` / `:SuperMarkdown breadcrumb`)**:
-  - Floating breadcrumb showing exact hierarchical position in deeply nested specs:
-    `󰈙 Architecture › 󰲡 Storage Layer › 󰲣 Schema Contracts` with live task and blocker rollups.
+- **Live Spec Statusline / Winbar Component**:
+  - Zero-overhead status string via `require("super-markdown").statusline()` for `lualine`, `heirline`, or native `statusline`:
+    `󰍔 Spec: 85% [APPROVED] │ 󰄵 12/15 │ 󰀦 1 │ 󰳦 0 │ [SKIM]`
 
 ---
 
@@ -201,6 +255,8 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | :--- | :--- | :--- | :--- |
 | Normal | `<leader>mr` | `:SuperMarkdown toggle` | Toggle in-buffer live rendering |
 | Normal | `<leader>mf` | `:SuperMarkdown focus` | Toggle Focus Mode (spotlight active block/section) |
+| Normal | `<leader>msm`| `:SuperMarkdown skim` | Toggle Executive Skim / X-Ray Mode (prose dimmer) |
+| Normal | `<leader>mE` | `:SuperMarkdown eyeball` | Open Interactive Spec Eyeballer & Scorecard HUD |
 | Normal | `<leader>mv` | `:SuperMarkdown preview` | Open synchronized side-by-side preview pane |
 | Normal | `<leader>mV` | `:SuperMarkdown preview reader` | Open full Reader Mode (distraction-free split) |
 | Normal | `<leader>me` | `:SuperMarkdown editor` | Toggle focused editor mode (hide gutter/signs) |
@@ -228,13 +284,21 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>md` | `:SuperMarkdown diff` | Toggle Git Spec change highlights (`+`, `~`, `▾`) |
 | Normal | `<leader>mdc`| `:SuperMarkdown diff_hud` | Open Agent Spec Changes Eyeballer HUD |
 | Normal | `]c` / `[c` | `:SuperMarkdown next/prev_change` | Jump to next / previous agent change hunk |
+| Normal | `]w` / `[w` | `:SuperMarkdown next/prev_risk` | Jump to next / previous critical risk / hazard |
+| Normal | `]a` / `[a` | `:SuperMarkdown next/prev_fluff` | Jump to next / previous ambiguity or AI fluff phrase |
+| Normal | `]s` / `[s` | `:SuperMarkdown next/prev_scenario` | Jump to next / previous BDD scenario / acceptance criteria |
+| Normal | `]k` / `[k` | `:SuperMarkdown next/prev_review` | Jump to next / previous human review directive |
 | Normal | `]r` / `[r` | `:SuperMarkdown next/prev_req` | Jump to next / previous requirement (`REQ-*`, `AC-*`) |
 | Normal | `]q` / `[q` | `:SuperMarkdown next/prev_question` | Jump to next / previous open question (`[?]`) |
 | Normal | `]b` / `[b` | `:SuperMarkdown next/prev_blocker` | Jump to next / previous blocker (`[!]`) |
 | Normal | `]t` / `[t` | `:SuperMarkdown next/prev_task` | Jump to next / previous pending task (`[ ]`) |
-| Normal | `<leader>mra`| `:SuperMarkdown review_approve` | Stamp section as human `[!APPROVED]` |
+| Normal | `<leader>mra`| `:SuperMarkdown review_approve` | Stamp active section as human `[!APPROVED]` |
+| Normal | `<leader>mrr`| `:SuperMarkdown review_reject` | Request active section revision `[!REJECTED]` |
 | Normal | `<leader>mrq`| `:SuperMarkdown review_question` | Leave directive/question for AI agent `[!QUESTION]` |
-| Normal | `<leader>mrr`| `:SuperMarkdown review_reject` | Request section revisions from AI agent `[!REJECTED]` |
+| Normal | `<leader>mrc`| `:SuperMarkdown review_comment` | Insert inline human review comment `[!REVIEW]` |
+| Normal | `<leader>mrA`| `:SuperMarkdown review_approve_all` | Mark entire specification `APPROVED` |
+| Normal | `<leader>mrR`| `:SuperMarkdown review_reject_all` | Request changes on entire specification |
+| Normal | `<leader>mre`| `:SuperMarkdown review_export` | Export structured review feedback prompt for agent |
 | Normal | `<leader>mb` | `:SuperMarkdown breadcrumb` | Show active section breadcrumb & metric HUD |
 | Insert | `<CR>` | *(smart list)* | Auto-continue list bullet / number |
 | Normal/Insert | `<Tab>` | *(table)* | Jump to next table cell |

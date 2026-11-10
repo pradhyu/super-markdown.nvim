@@ -71,6 +71,18 @@ M.defaults = {
         INFO = { icon = "󰋽 ", title = "Info", hl = "SuperMarkdownCalloutInfo" },
         QUESTION = { icon = "󰋽 ", title = "Question", hl = "SuperMarkdownCalloutQuestion" },
         ABSTRACT = { icon = "󰨸 ", title = "Abstract", hl = "SuperMarkdownCalloutAbstract" },
+        APPROVED = { icon = "󰄵 ", title = "Approved", hl = "SuperMarkdownCalloutApproved" },
+        REJECTED = { icon = "󰀦 ", title = "Revision Requested", hl = "SuperMarkdownCalloutRejected" },
+        AGENT = { icon = "󰚩 ", title = "Agent Directive", hl = "SuperMarkdownCalloutAgent" },
+        DECISION = { icon = "󰌶 ", title = "Architectural Decision", hl = "SuperMarkdownCalloutDecision" },
+        ASSUMPTION = { icon = "󰋽 ", title = "Assumption", hl = "SuperMarkdownCalloutAssumption" },
+        SECURITY = { icon = "󰌾 ", title = "Security Notice", hl = "SuperMarkdownCalloutSecurity" },
+        BREAKING = { icon = "󰀦 ", title = "Breaking Change", hl = "SuperMarkdownCalloutBreaking" },
+        PERFORMANCE = { icon = "󰓅 ", title = "Performance SLO", hl = "SuperMarkdownCalloutPerformance" },
+        RISK = { icon = "󰳦 ", title = "Risk & Mitigation", hl = "SuperMarkdownCalloutRisk" },
+        RATIONALE = { icon = "󰈚 ", title = "Rationale & Context", hl = "SuperMarkdownCalloutRationale" },
+        PROMPT = { icon = "󰞋 ", title = "LLM Prompt", hl = "SuperMarkdownCalloutPrompt" },
+        REVIEW = { icon = "󰋽 ", title = "Human Review Note", hl = "SuperMarkdownCalloutReview" },
       },
     },
     tables = {
@@ -134,6 +146,15 @@ M.defaults = {
       icon = "󰌹 ",
       hl = "SuperMarkdownLink",
     },
+    risks = {
+      enabled = true,
+    },
+    fluff = {
+      enabled = true,
+    },
+    bdd = {
+      enabled = true,
+    },
   },
 
   -- Mermaid diagram options
@@ -163,6 +184,9 @@ M.defaults = {
       position = "right", -- "left" or "right"
       auto_close = false, -- keep open while toggled even when clicking or jumping
       auto_sync = true,   -- track active heading on cursor move
+      auto_switch_buffer = true, -- automatically reload & sync TOC to the focused markdown document/window
+      focus_on_open = true, -- focus sidebar on open
+      scroll_to_top = true, -- when moving in sidebar, position heading at top of view (zt) instead of center (zz)
     },
   },
 
@@ -180,6 +204,7 @@ M.defaults = {
     width = 0.5,               -- fraction of screen width (0.0-1.0) or fixed column count
     wrap = false,              -- keep 2D ASCII Mermaid diagrams & box tables intact without soft-wrap
     focus_on_open = false,     -- keep focus in editing window when toggling preview open
+    auto_switch_buffer = true, -- automatically switch & reload preview pane when focusing another markdown buffer
     sync_scroll = true,        -- master toggle to enable/disable scroll sync
     sync_from_source = true,   -- sync preview pane when scrolling/moving in editable buffer
     sync_from_preview = true,  -- sync editable buffer when scrolling/moving in preview pane
@@ -222,10 +247,23 @@ M.defaults = {
     cmd = "auto",          -- CLI tool for direct dispatch ("auto", "claude -p", "gemini -p", "llm", etc.)
   },
 
+  -- Sticky Stacked Headers (Context Stack pinned at top of window while scrolling past headings)
+  sticky = {
+    enabled = false,      -- optional, enable via config or shortcut (<leader>mH / :SuperMarkdown sticky)
+    max_depth = 3,        -- max stacked parent headers shown at once (1-6)
+    source_win = true,    -- show sticky header stack in markdown editor window
+    preview_win = true,   -- show sticky header stack in live preview pane
+    show_border = true,   -- show subtle bottom border under stacked headers
+  },
+
   -- Keybindings
   keymaps = {
     toggle_render = "<leader>mr",
     toggle_focus = "<leader>mf",
+    toggle_skim = "<leader>msm",
+    toggle_sticky = "<leader>mH",
+    toggle_scroll_to_top = "<leader>mzT",
+    eyeball = "<leader>mE",
     toggle_zen = "<leader>mz",
     preview_pane = "<leader>mv",
     toggle_editor = "<leader>me",
@@ -263,9 +301,21 @@ M.defaults = {
     prev_blocker = "[b",
     next_task = "]t",
     prev_task = "[t",
+    next_risk = "]w",
+    prev_risk = "[w",
+    next_fluff = "]a",
+    prev_fluff = "[a",
+    next_scenario = "]s",
+    prev_scenario = "[s",
+    next_review = "]k",
+    prev_review = "[k",
     review_approve = "<leader>mra",
     review_question = "<leader>mrq",
     review_reject = "<leader>mrr",
+    review_comment = "<leader>mrc",
+    review_approve_all = "<leader>mrA",
+    review_reject_all = "<leader>mrR",
+    review_export = "<leader>mre",
     breadcrumb = "<leader>mb",
     table_next = "<Tab>",
     table_prev = "<S-Tab>",

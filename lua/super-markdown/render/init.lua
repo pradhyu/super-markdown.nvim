@@ -9,6 +9,10 @@ local codeblocks = require("super-markdown.render.codeblocks")
 local divider = require("super-markdown.render.divider")
 local links = require("super-markdown.render.links")
 local spec_tags = require("super-markdown.render.spec_tags")
+local fluff = require("super-markdown.render.fluff")
+local risks = require("super-markdown.render.risks")
+local bdd = require("super-markdown.render.bdd")
+local skim = require("super-markdown.skim")
 local analyzer = require("super-markdown.spec.analyzer")
 
 local mermaid = require("super-markdown.mermaid")
@@ -60,6 +64,7 @@ function M.clear(bufnr)
     if mermaid.get_namespace then
       vim.api.nvim_buf_clear_namespace(bufnr, mermaid.get_namespace(), 0, -1)
     end
+    skim.clear(bufnr)
   end
 end
 
@@ -163,6 +168,15 @@ function M.render(bufnr)
         -- 10. Inline Code Pills
         inline_code.render(bufnr, NS_ID, lnum, line, r_opts.inline_code)
 
+        -- 11. Acceptance Criteria & BDD Scenarios (Given/When/Then)
+        bdd.render(bufnr, NS_ID, lnum, line, r_opts.bdd)
+
+        -- 12. Critical Risk & Destructive Operation Radar
+        risks.render(bufnr, NS_ID, lnum, line, r_opts.risks)
+
+        -- 13. AI Fluff & Boilerplate Radar
+        fluff.render(bufnr, NS_ID, lnum, line, r_opts.fluff)
+
         lnum = lnum + 1
       end
     else
@@ -173,6 +187,11 @@ function M.render(bufnr)
   -- 8. Render Mermaid diagrams automatically in line
   if config.options.mermaid and config.options.mermaid.enabled ~= false and config.options.mermaid.inline ~= false then
     mermaid.render_inline(bufnr, NS_ID, config.options.mermaid)
+  end
+
+  -- 9. Refresh Executive Skim Mode if enabled
+  if skim.is_enabled(bufnr) then
+    skim.render(bufnr)
   end
 end
 
