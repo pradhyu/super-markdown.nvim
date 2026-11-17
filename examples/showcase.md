@@ -55,7 +55,45 @@ Press `<leader>mtf` inside any table to auto-format and align columns. Press `<T
 
 ## 4. Mermaid Diagram Architecture
 
-Place your cursor on the diagram below and run `:SuperMarkdown mermaid` (or press `<leader>mp`):
+Place your cursor on any diagram below and run `:SuperMarkdown mermaid` (or press `<leader>mp`). You can press `t` inside the floating window to instantly toggle between **Termaid** and **Internal** renderers!
+
+### Parallel Processing Streams (Horizontal Sub-Diagrams)
+
+```mermaid
+flowchart LR
+    subgraph Ingestion["Ingestion Pipeline"]
+        direction LR
+        Client["Web / Mobile App"] -->|HTTPS| CDN["Cloudflare CDN"]
+        CDN -->|Route| WAF["API Gateway"]
+    end
+
+    subgraph Processing["Parallel Processing Streams"]
+        direction LR
+        subgraph StreamA["Real-Time Stream"]
+            direction LR
+            Kafka["Kafka Cluster"] -->|Consume| Flink["Flink Processor"]
+            Flink -->|Write| Redis[("Redis Cache")]
+        end
+
+        subgraph StreamB["Batch Analytics"]
+            direction LR
+            Lake[("Data Lake")] -->|ETL| Spark["Spark Workers"]
+            Spark -->|Index| ClickHouse[("ClickHouse")]
+        end
+    end
+
+    subgraph Delivery["Delivery & Dashboards"]
+        direction LR
+        Redis -->|Read| API["GraphQL API"]
+        ClickHouse -->|Metrics| Dash["Live Dashboard"]
+    end
+
+    WAF -->|Publish| Kafka
+    WAF -->|Archive| Lake
+    API -->|Response| Client
+```
+
+### Basic Decision Flowchart
 
 ```mermaid
 graph TD
@@ -69,7 +107,7 @@ graph TD
     E --> F
 ```
 
-Another sequence diagram example:
+### Sequence Flow Diagram
 
 ```mermaid
 sequenceDiagram

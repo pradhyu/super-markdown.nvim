@@ -796,13 +796,25 @@ function M.compile_document(bufnr, win_width)
 
       if lang_clean == "mermaid" or lang_clean == "mmd" then
         -- Render Mermaid diagram directly in the preview buffer (hiding raw code!)
-        -- Include window width in cache key so resizing re-renders diagram layout to fit
+        -- Include active renderer and window width in cache key so resizing re-renders diagram layout to fit
         local code = table.concat(code_lines, "\n")
         local inner_max_w = math.max(28, win_width - 8)
-        local hash = vim.fn.sha256(code .. ":" .. tostring(inner_max_w))
+        local mermaid_init = require("super-markdown.mermaid")
+        local active_renderer = mermaid_init.get_active_renderer and mermaid_init.get_active_renderer() or "internal"
+        local hash = vim.fn.sha256(active_renderer .. ":" .. code .. ":" .. tostring(inner_max_w))
         local diagram_lines = mermaid_cache[hash]
         if not diagram_lines then
-          diagram_lines = ascii.render(code, { max_width = inner_max_w, bare = true })
+          if active_renderer == "termaid" then
+            local termaid = require("super-markdown.mermaid.termaid")
+            local t_opts = vim.tbl_deep_extend("force", config.options.mermaid.termaid or {}, { max_width = inner_max_w })
+            local ok, t_res = termaid.render(code, t_opts)
+            if ok and t_res and t_res.text_lines and #t_res.text_lines > 0 then
+              diagram_lines = t_res.text_lines
+            end
+          end
+          if not diagram_lines then
+            diagram_lines = ascii.render(code, { max_width = inner_max_w, bare = true })
+          end
           mermaid_cache[hash] = diagram_lines
         end
 
@@ -814,7 +826,7 @@ function M.compile_document(bufnr, win_width)
           end
         end
         local box_inner_w = math.max(diag_w + 2, math.min(inner_max_w, math.max(44, win_width - 8)))
-        local title_badge = "󰡷 Mermaid Diagram (Live Preview)"
+        local title_badge = string.format("󰡷 Mermaid Diagram (Live Preview: %s)", active_renderer)
         local title_w = vim.fn.strdisplaywidth(title_badge)
         local top_dashes = string.rep("─", math.max(2, box_inner_w - title_w - 3))
         local header_str = "  ╭─ " .. title_badge .. " " .. top_dashes .. "╮"

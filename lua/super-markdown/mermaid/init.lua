@@ -1,13 +1,43 @@
 local preview = require("super-markdown.mermaid.preview")
 local ascii = require("super-markdown.mermaid.ascii")
 local syntax = require("super-markdown.mermaid.syntax")
+local termaid = require("super-markdown.mermaid.termaid")
 local config = require("super-markdown.config")
 
 local M = {}
 M.syntax = syntax
+M.termaid = termaid
 
 local NS_ID = vim.api.nvim_create_namespace("super_markdown_mermaid")
-local diagram_cache = {} -- hash -> virt_lines
+local diagram_cache = {} -- key (renderer:hash) -> virt_lines
+
+function M.clear_cache()
+  diagram_cache = {}
+end
+
+function M.get_active_renderer()
+  local r = (config.options.mermaid and config.options.mermaid.renderer) or "auto"
+  if r == "termaid" then
+    return "termaid"
+  elseif r == "internal" then
+    return "internal"
+  else
+    -- "auto": prefer termaid if installed, fallback to internal pure-Lua
+    return termaid.is_available() and "termaid" or "internal"
+  end
+end
+
+function M.set_renderer(name)
+  if name ~= "auto" and name ~= "termaid" and name ~= "internal" then
+    vim.notify("SuperMarkdown: Invalid mermaid renderer '" .. tostring(name) .. "'. Choose 'auto', 'termaid', or 'internal'.", vim.log.levels.WARN)
+    return
+  end
+  config.options.mermaid.renderer = name
+  M.clear_cache()
+  local active = M.get_active_renderer()
+  vim.notify(string.format("SuperMarkdown: Mermaid renderer set to '%s' (active: %s) 󰡷", name, active), vim.log.levels.INFO)
+  M.render_status()
+end
 
 function M.get_namespace()
   return NS_ID
@@ -101,21 +131,35 @@ function M.render_inline(bufnr, ns_id, opts)
   for b_idx, block in ipairs(blocks) do
     local code = block.code
     local hash = vim.fn.sha256(code)
+    local active_renderer = M.get_active_renderer()
+    local cache_key = active_renderer .. ":" .. hash
 
-    local virt_lines = diagram_cache[hash]
+    local virt_lines = diagram_cache[cache_key]
     if not virt_lines then
-      local ascii_lines = ascii.render(code)
-      virt_lines = {}
-      for idx, l in ipairs(ascii_lines) do
-        if idx == 1 then
-          table.insert(virt_lines, { { l, "SuperMarkdownMermaidReady" } })
-        elseif ascii.tokenize_line then
-          table.insert(virt_lines, ascii.tokenize_line(l))
-        else
-          table.insert(virt_lines, { { l, "SuperMarkdownTableBorder" } })
+      local rendered_ok = false
+      if active_renderer == "termaid" then
+        local t_opts = vim.tbl_deep_extend("force", config.options.mermaid.termaid or {}, opts.termaid or {})
+        local ok, t_res = termaid.render(code, t_opts)
+        if ok and t_res and t_res.virt_lines and #t_res.virt_lines > 0 then
+          virt_lines = t_res.virt_lines
+          rendered_ok = true
         end
       end
-      diagram_cache[hash] = virt_lines
+
+      if not rendered_ok then
+        local ascii_lines = ascii.render(code)
+        virt_lines = {}
+        for idx, l in ipairs(ascii_lines) do
+          if idx == 1 then
+            table.insert(virt_lines, { { l, "SuperMarkdownMermaidReady" } })
+          elseif ascii.tokenize_line then
+            table.insert(virt_lines, ascii.tokenize_line(l))
+          else
+            table.insert(virt_lines, { { l, "SuperMarkdownTableBorder" } })
+          end
+        end
+      end
+      diagram_cache[cache_key] = virt_lines
     end
 
     -- 1. Attach live rendered diagram as virt_lines right beneath the block

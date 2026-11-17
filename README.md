@@ -62,10 +62,15 @@ Stay in flow when reading or writing long technical documents:
 
 ### 3. Automated In-Line Mermaid Diagram Engine
 Write ```` ```mermaid ```` diagrams and have them **render automatically in line** directly inside the active buffer—no manual preview required:
+- **Dual Engine Options (`termaid` vs Internal)**:
+  - **`termaid` Engine**: Seamlessly integrates with the [termaid](https://github.com/fasouto/termaid) CLI when available. Uses `--format styled-json` to preserve rich semantic tokens (`node`, `edge`, `arrow`, `label`, `edge_label`, `subgraph`) as live Neovim extmarks, with A* edge routing, branch turns, and support for all 18 Mermaid diagram types (flowchart, sequence, class, state, er, gitgraph, gantt, pie, mindmap, etc.).
+  - **Upgraded Pure-Lua Internal Engine**: Zero external dependencies. Upgraded with true 2D multi-branch horizontal (`LR` / `RL`) flowcharts, decision diamond routing, class hierarchy arrows (`△`), and ER entity connectors.
+  - **Flexible Engine Configuration (`renderer = "auto" | "termaid" | "internal"`)**: Set `renderer = "auto"` (default, uses `termaid` if installed or in `$PATH`, else internal), `"termaid"`, or `"internal"`.
+  - **Live Runtime Switching**: Switch between engines dynamically using `:SuperMarkdown mermaid_renderer [auto|termaid|internal]` or press `t` inside the `<leader>mp` floating preview window to instantly compare renders!
 - **Full Syntax Highlighting**: Real-time syntax highlighting for raw Mermaid text (keywords, directions, connectors/arrows, node shapes & brackets, pipe edge labels, comments, strings, styles, and hex colors) powered by live buffer extmarks and standard Vim syntax (`syntax/mermaid.vim`).
 - **Live In-Buffer Rendering (`virt_lines`)**: Diagrams are parsed and rendered directly beneath the code block as clean, connected Unicode diagrams that scroll naturally with the buffer.
-- **Full Diagram Type Support**: Flowcharts (TD, LR with shapes & edge labels), Sequence Diagrams (participants, lifelines, message arrows, step numbers, self-calls), and State Machines.
-- **Terminal Graphics & Floating Preview (`<leader>mp`)**: Pixel-perfect Kitty Graphics Protocol rendering via `kitten icat` inside floating popup windows when high-resolution image preview is desired.
+- **Full Diagram Type Support**: Flowcharts (TD, LR with shapes & edge labels), Sequence Diagrams (participants, lifelines, message arrows, step numbers, self-calls), State Machines, Class Diagrams, and ER Diagrams.
+- **Terminal Graphics & Floating Preview (`<leader>mp`)**: Pixel-perfect Kitty Graphics Protocol rendering via `kitten icat` inside floating popup windows when high-resolution image preview is desired, with `t` shortcut to toggle between text engines.
 - **Instant SHA-256 Disk Caching**: Compiled diagrams are cached in `~/.cache/nvim/super_markdown/mermaid/`, making subsequent renders instantaneous (0ms).
 
 ### 4. Live Synchronized Side Preview Pane
@@ -264,6 +269,7 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>mo` | `:SuperMarkdown toc` | Open Table of Contents (Telescope / Picker) |
 | Normal | `<leader>ms` | `:SuperMarkdown toc_sidebar` | Toggle TOC outline sidebar |
 | Normal | `<leader>mp` | `:SuperMarkdown mermaid` | Preview Mermaid diagram under cursor |
+| Normal | — | `:SuperMarkdown mermaid_renderer [auto\|termaid\|internal]` | Switch Mermaid text renderer engine |
 | Normal | `<leader>mx` | `:SuperMarkdown checkbox` | Toggle / cycle checkbox state |
 | Normal | `<leader>mtf`| `:SuperMarkdown table_format`| Auto-format & align Markdown table |
 | Normal | `<leader>ml` | `:SuperMarkdown link` | Follow Markdown link, `#anchor`, or `@impl`/`@test` file |
@@ -374,6 +380,18 @@ require("super-markdown").setup({
 
   mermaid = {
     enabled = true,
+    renderer = "auto", -- "auto" (prefers termaid if installed, else internal), "termaid", "internal"
+    termaid = {
+      cmd = "termaid", -- command or path to termaid CLI
+      format = "styled-json", -- "styled-json" (preserves colors/tokens) or "text"
+      arrow_style = "pointer", -- "pointer" (►), "triangle" (▶), "outline" (▷)
+      padding_x = 2,
+      padding_y = 1,
+      gap = 2,
+      width = nil, -- integer or nil (auto-fits buffer/window)
+      ascii = false, -- use ASCII characters instead of Unicode box-drawing
+      theme = nil, -- optional rich color theme
+    },
     backend = "auto", -- "auto", "kitty", "ascii"
     theme = "dark",   -- "dark", "default", "forest", "neutral"
     preview_win = {

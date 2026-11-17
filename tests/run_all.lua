@@ -1544,6 +1544,71 @@ do
   assert_eq(sb_tool.is_open(), false, "Sidebar toggled closed")
 end
 
+-- 39. Test Termaid Integration & Mermaid Renderer Options
+do
+  print("\n[Test 39] Termaid Integration & Mermaid Renderer Options")
+  local termaid_mod = require("super-markdown.mermaid.termaid")
+  local mermaid_mod = require("super-markdown.mermaid")
+  local sm_main = require("super-markdown")
+
+  assert_eq(type(termaid_mod.is_available), "function", "termaid.is_available is a function")
+  assert_eq(type(termaid_mod.render), "function", "termaid.render is a function")
+
+  local avail = termaid_mod.is_available()
+  assert_eq(avail, true, "Termaid CLI is detected and available on machine")
+
+  -- Test styled-json rendering with termaid
+  local code = "graph TD\n  Start[Start Node] --> Finish[Finish Node]\n"
+  local ok, res = termaid_mod.render(code, { padding_x = 2, padding_y = 1, gap = 2 })
+  assert_eq(ok, true, "Termaid renders simple graph successfully")
+  assert_eq(res.is_styled, true, "Termaid returns styled output")
+  assert_eq(#res.text_lines >= 4, true, "Termaid produced multiple text lines")
+  assert_eq(#res.virt_lines, #res.text_lines, "Termaid virt_lines count matches text_lines count")
+
+  -- Test active renderer detection and switching
+  sm_main.set_mermaid_renderer("internal")
+  assert_eq(mermaid_mod.get_active_renderer(), "internal", "Switched renderer to internal")
+
+  sm_main.set_mermaid_renderer("termaid")
+  assert_eq(mermaid_mod.get_active_renderer(), "termaid", "Switched renderer to termaid")
+
+  sm_main.set_mermaid_renderer("auto")
+  assert_eq(mermaid_mod.get_active_renderer(), "termaid", "Auto prefers termaid when available")
+
+  -- Test in-buffer inline rendering with termaid
+  local t_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(t_buf, 0, -1, false, {
+    "# Architecture",
+    "```mermaid",
+    "graph LR",
+    "    A[Service A] --> B[Service B]",
+    "```",
+  })
+  mermaid_mod.render_inline(t_buf)
+  local t_extmarks = vim.api.nvim_buf_get_extmarks(t_buf, mermaid_mod.get_namespace(), 0, -1, { details = true })
+  assert_eq(#t_extmarks >= 2, true, "Extmarks placed for inline diagram and fence banner using termaid")
+end
+
+-- 40. Test Upgraded Multi-Branch Horizontal (LR) ASCII Renderer
+do
+  print("\n[Test 40] Upgraded Multi-Branch Horizontal (LR) ASCII Renderer")
+  local ascii_mod = require("super-markdown.mermaid.ascii")
+  local lr_sample = [[graph LR
+    Client --> API --> DB
+    API --> Cache
+]]
+  local rendered = ascii_mod.render(lr_sample)
+  local joined = table.concat(rendered, "\n")
+  assert_eq(joined:find("LR - Live", 1, true) ~= nil, true, "Diagram has LR title")
+  assert_eq(joined:find("Client") ~= nil, true, "Client node rendered")
+  assert_eq(joined:find("API") ~= nil, true, "API node rendered")
+  assert_eq(joined:find("DB") ~= nil, true, "DB node rendered")
+  assert_eq(joined:find("Cache") ~= nil, true, "Cache node rendered")
+  -- Verify horizontal arrow indicators
+  assert_eq(joined:find("►") ~= nil or joined:find("▶") ~= nil, true, "Contains horizontal arrowhead ►")
+  assert_eq(joined:find("┬") ~= nil, true, "Contains branch T-junction ┬ for multi-target split")
+end
+
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")

@@ -1201,7 +1201,222 @@ local function render_flowchart(code, opts, custom_title)
   end
 
   -- =========================================================================
-  -- 2D MULTI-COLUMN LAYERED GRAPH RENDERER (`TD` / `TB` & Multi-Branch `LR`)
+  -- MULTI-BRANCH HORIZONTAL GRAPH RENDERER (`flowchart LR` / `graph LR`)
+  -- =========================================================================
+  if is_lr and max_rank >= 2 then
+    local avail_w = math.max(48, max_width - 4)
+    local col_box_cap = math.max(12, math.min(22, math.floor((avail_w - (max_rank - 1) * 6) / max_rank)))
+    if col_box_cap >= 10 then
+      local boxes = {}
+      for _, id in ipairs(node_order) do
+        boxes[id] = make_box(id, nodes[id].shape, nodes[id].label, col_box_cap)
+      end
+
+      local col_w = {}
+      for r = 1, max_rank do
+        col_w[r] = 0
+        for _, id in ipairs(layers[r] or {}) do
+          if boxes[id].width > col_w[r] then
+            col_w[r] = boxes[id].width
+          end
+        end
+      end
+
+      local total_cols_w = 0
+      for r = 1, max_rank do total_cols_w = total_cols_w + col_w[r] end
+
+      if total_cols_w + (max_rank - 1) * 6 <= avail_w + 12 then
+        local col_x = { [1] = 2 }
+        for r = 2, max_rank do
+          local conn_w = 6
+          for _, u in ipairs(layers[r - 1] or {}) do
+            for _, e in ipairs(dag_children[u] or {}) do
+              if e.label and e.label ~= "" then
+                conn_w = math.max(conn_w, str_width(e.label) + 5)
+              end
+            end
+          end
+          col_x[r] = col_x[r - 1] + col_w[r - 1] + conn_w
+        end
+        local total_w = col_x[max_rank] + col_w[max_rank] + 4
+
+        local y_pos = {}
+        for r = 1, max_rank do
+          local l_nodes = layers[r] or {}
+          if #l_nodes > 1 then
+            local cy = 1
+            for _, id in ipairs(l_nodes) do
+              y_pos[id] = cy
+              cy = cy + boxes[id].height + 2
+            end
+          end
+        end
+
+        for r = 1, max_rank do
+          local l_nodes = layers[r] or {}
+          if #l_nodes == 1 then
+            local id = l_nodes[1]
+            local rel_ys = {}
+            for _, c in ipairs(dag_children[id] or {}) do
+              if y_pos[c.to] then
+                table.insert(rel_ys, y_pos[c.to] + math.floor(boxes[c.to].height / 2))
+              end
+            end
+            for _, p in ipairs(dag_parents[id] or {}) do
+              if y_pos[p.from] then
+                table.insert(rel_ys, y_pos[p.from] + math.floor(boxes[p.from].height / 2))
+              end
+            end
+            if #rel_ys > 0 then
+              local sum = 0
+              for _, y in ipairs(rel_ys) do sum = sum + y end
+              local mid = math.floor(sum / #rel_ys)
+              y_pos[id] = math.max(1, mid - math.floor(boxes[id].height / 2))
+            else
+              y_pos[id] = 1
+            end
+          end
+        end
+
+        for r = max_rank - 1, 1, -1 do
+          local l_nodes = layers[r] or {}
+          if #l_nodes == 1 then
+            local id = l_nodes[1]
+            local child_ys = {}
+            for _, c in ipairs(dag_children[id] or {}) do
+              if y_pos[c.to] then
+                table.insert(child_ys, y_pos[c.to] + math.floor(boxes[c.to].height / 2))
+              end
+            end
+            if #child_ys > 0 then
+              local sum = 0
+              for _, y in ipairs(child_ys) do sum = sum + y end
+              local mid = math.floor(sum / #child_ys)
+              y_pos[id] = math.max(1, mid - math.floor(boxes[id].height / 2))
+            end
+          end
+        end
+
+        local total_h = 1
+        for id, y in pairs(y_pos) do
+          total_h = math.max(total_h, y + boxes[id].height)
+        end
+
+        local canvas_lines = {}
+        for y = 1, total_h do
+          canvas_lines[y] = make_canvas_line(total_w)
+        end
+
+        local mid_y, right_x, left_x = {}, {}, {}
+        for r = 1, max_rank do
+          for _, id in ipairs(layers[r] or {}) do
+            local b = boxes[id]
+            local bx = col_x[r]
+            local by = y_pos[id] or 1
+            for li, bl in ipairs(b.lines) do
+              if canvas_lines[by + li - 1] then
+                canvas_lines[by + li - 1]:put(bx, bl)
+              end
+            end
+            mid_y[id] = by + math.floor(b.height / 2)
+            right_x[id] = bx + b.width
+            left_x[id] = bx
+          end
+        end
+
+        for r = 1, max_rank do
+          for _, u in ipairs(layers[r] or {}) do
+            local chs = dag_children[u] or {}
+            if #chs == 1 then
+              local e = chs[1]
+              local v = e.to
+              local x1 = right_x[u]
+              local y1 = mid_y[u]
+              local x2 = left_x[v] or (x1 + 6)
+              local y2 = mid_y[v] or y1
+              if y1 == y2 then
+                local line_w = (x2 - 1) - x1
+                local lbl = (e.label ~= "") and ("[" .. e.label .. "]") or ""
+                if lbl ~= "" and str_width(lbl) + 2 <= line_w then
+                  local d1 = math.floor((line_w - str_width(lbl) - 1) / 2)
+                  local d2 = line_w - str_width(lbl) - 1 - d1
+                  canvas_lines[y1]:put(x1, string.rep("─", d1) .. lbl .. string.rep("─", d2) .. "►")
+                else
+                  canvas_lines[y1]:put(x1, string.rep("─", math.max(1, line_w - 1)) .. "►")
+                end
+              else
+                local turn_x = x1 + 2
+                local dir_down = (y2 > y1)
+                canvas_lines[y1]:put(x1, "──" .. (dir_down and "╮" or "╯"))
+                local step = dir_down and 1 or -1
+                for y = y1 + step, y2 - step, step do
+                  if canvas_lines[y] then canvas_lines[y]:put(turn_x, "│") end
+                end
+                local lbl = (e.label ~= "") and ("[" .. e.label .. "]") or ""
+                local rest_w = (x2 - 1) - turn_x
+                local corner = dir_down and "╰" or "╭"
+                if lbl ~= "" and str_width(lbl) + 2 <= rest_w then
+                  canvas_lines[y2]:put(turn_x, corner .. "─" .. lbl .. string.rep("─", math.max(0, rest_w - str_width(lbl) - 2)) .. "►")
+                else
+                  canvas_lines[y2]:put(turn_x, corner .. string.rep("─", math.max(1, rest_w - 1)) .. "►")
+                end
+              end
+            elseif #chs > 1 then
+              local x1 = right_x[u]
+              local y1 = mid_y[u]
+              local turn_x = x1 + 2
+              local min_cy, max_cy = y1, y1
+              for _, e in ipairs(chs) do
+                local cy = mid_y[e.to] or y1
+                if cy < min_cy then min_cy = cy end
+                if cy > max_cy then max_cy = cy end
+              end
+              canvas_lines[y1]:put(x1, "──┬")
+              for y = min_cy + 1, max_cy - 1 do
+                if y ~= y1 and canvas_lines[y] then canvas_lines[y]:put(turn_x, "│") end
+              end
+              for _, e in ipairs(chs) do
+                local v = e.to
+                local x2 = left_x[v] or (turn_x + 6)
+                local y2 = mid_y[v] or y1
+                local rest_w = (x2 - 1) - turn_x
+                local lbl = (e.label ~= "") and ("[" .. e.label .. "]") or ""
+                local corner = (y2 == min_cy and y2 < y1) and "╭" or ((y2 == max_cy and y2 > y1) and "╰" or "├")
+                if lbl ~= "" and str_width(lbl) + 2 <= rest_w then
+                  canvas_lines[y2]:put(turn_x, corner .. "─" .. lbl .. string.rep("─", math.max(0, rest_w - str_width(lbl) - 2)) .. "►")
+                else
+                  canvas_lines[y2]:put(turn_x, corner .. string.rep("─", math.max(1, rest_w - 1)) .. "►")
+                end
+              end
+            end
+
+            for _, be in ipairs(back_edges_from[u] or {}) do
+              local target_lbl = nodes[be.to] and nodes[be.to].label:gsub("\n", " ") or be.to
+              local e_lbl = (be.label and be.label ~= "") and (" [" .. be.label .. "]") or ""
+              local loop_str = string.format("╰─⟲%s loops to [%s]", e_lbl, truncate_str(target_lbl, 24))
+              local by = (y_pos[u] or 1) + boxes[u].height
+              if canvas_lines[by] then
+                canvas_lines[by]:put(col_x[rank[u]], loop_str)
+              else
+                local extra = make_canvas_line(total_w)
+                extra:put(col_x[rank[u]], loop_str)
+                table.insert(canvas_lines, extra)
+              end
+            end
+          end
+        end
+
+        local out = {}
+        for _, l in ipairs(canvas_lines) do
+          table.insert(out, l:tostring())
+        end
+        return frame_diagram(out, custom_title or "󰡷 Mermaid Flowchart (LR - Live)", opts)
+      end
+    end
+  end
+
+  -- =========================================================================
+  -- 2D MULTI-COLUMN LAYERED GRAPH RENDERER (`TD` / `TB`)
   -- =========================================================================
   local avail_w = math.max(46, max_width - 6)
   local gap_w = 3

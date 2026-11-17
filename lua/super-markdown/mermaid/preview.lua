@@ -1,6 +1,8 @@
 local config = require("super-markdown.config")
 local compiler = require("super-markdown.mermaid.compiler")
 local syntax = require("super-markdown.mermaid.syntax")
+local termaid = require("super-markdown.mermaid.termaid")
+local ascii_mod = require("super-markdown.mermaid.ascii")
 
 local M = {}
 
@@ -32,7 +34,7 @@ local function style_ascii_buffer(buf)
         hl_group = "SuperMarkdownMermaidReady",
         priority = 100,
       })
-    elseif line:find("▼") or line:find("▶") or line:find("◀") or line:find("──") then
+    elseif line:find("▼") or line:find("▶") or line:find("►") or line:find("◀") or line:find("──") or line:find("─►") then
       pcall(vim.api.nvim_buf_set_extmark, buf, NS_ID, lnum, 0, {
         end_col = #line,
         hl_group = "SuperMarkdownMermaidArrow",
@@ -63,6 +65,9 @@ function M.open(mermaid_code)
   local row = math.floor((vim.o.lines - height) / 2)
   local col = math.floor((vim.o.columns - width) / 2)
 
+  local mermaid_init = require("super-markdown.mermaid")
+  local current_renderer = mermaid_init.get_active_renderer()
+
   preview_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[preview_buf].bufhidden = "wipe"
   vim.bo[preview_buf].buftype = "nofile"
@@ -76,14 +81,34 @@ function M.open(mermaid_code)
     col = col,
     style = "minimal",
     border = p_opts.border or "rounded",
-    title = " 󰡷 Mermaid Diagram Preview ",
+    title = string.format(" 󰡷 Mermaid Diagram Preview (%s) ", current_renderer),
     title_pos = "center",
-    footer = " [q/<Esc>] Close | [s] Side Preview Pane | [a] Toggle ASCII/Image | [o] Open External | [r] Recompile ",
+    footer = " [q/<Esc>] Close | [t] Termaid/Internal | [s] Side Pane | [a] Toggle ASCII/Image | [o] Open External | [r] Recompile ",
     footer_pos = "center",
   })
 
   local mode = "ascii"
   local latest_result = nil
+
+  local function render_current_ascii()
+    if current_renderer == "termaid" then
+      local t_opts = vim.tbl_deep_extend("force", config.options.mermaid.termaid or {}, { max_width = width - 8 })
+      local ok, t_res = termaid.render(mermaid_code, t_opts)
+      if ok and t_res and t_res.text_lines and #t_res.text_lines > 0 then
+        return {
+          ascii = t_res.text_lines,
+          virt_lines = t_res.virt_lines,
+          renderer = "termaid",
+        }
+      end
+    end
+    -- Fallback / internal pure-Lua render
+    local lines = ascii_mod.render(mermaid_code, { max_width = width - 8 })
+    return {
+      ascii = lines,
+      renderer = "internal",
+    }
+  end
 
   local function bind_keys(buf)
     if not (buf and vim.api.nvim_buf_is_valid(buf)) then return end
@@ -94,6 +119,25 @@ function M.open(mermaid_code)
     set_keymap("q", M.close)
     set_keymap("Q", M.close)
     set_keymap("<Esc>", M.close)
+
+    set_keymap("t", function()
+      local next_r = (current_renderer == "termaid") and "internal" or "termaid"
+      if next_r == "termaid" and not termaid.is_available() then
+        vim.notify("SuperMarkdown: 'termaid' is not installed or found in PATH. Install with `pip install termaid`.", vim.log.levels.WARN)
+        return
+      end
+      current_renderer = next_r
+      config.options.mermaid.renderer = next_r
+      if preview_win and vim.api.nvim_win_is_valid(preview_win) then
+        pcall(vim.api.nvim_win_set_config, preview_win, {
+          title = string.format(" 󰡷 Mermaid Diagram Preview (%s) ", current_renderer),
+          title_pos = "center",
+        })
+      end
+      latest_result = render_current_ascii()
+      M._show_ascii(latest_result, bind_keys)
+      vim.notify("SuperMarkdown: Switched Mermaid preview to " .. current_renderer .. " renderer 󰡷", vim.log.levels.INFO)
+    end)
 
     set_keymap("s", function()
       M.close()
@@ -160,10 +204,7 @@ function M.open(mermaid_code)
     end)
   end
 
-  -- Render pure-Lua ASCII diagram IMMEDIATELY (zero external calls unless user presses [o] or [a])
-  local ascii_mod = require("super-markdown.mermaid.ascii")
-  local immediate_ascii = ascii_mod.render(mermaid_code)
-  latest_result = { ascii = immediate_ascii }
+  latest_result = render_current_ascii()
   M._show_ascii(latest_result, bind_keys)
 
   -- Only pre-compile external PNG if user explicitly configured backend == "kitty"
@@ -206,7 +247,30 @@ function M._show_ascii(result, bind_keys)
   vim.bo[preview_buf].modifiable = false
   vim.bo[preview_buf].readonly = true
 
-  style_ascii_buffer(preview_buf)
+  vim.api.nvim_buf_clear_namespace(preview_buf, NS_ID, 0, -1)
+  if result.virt_lines and #result.virt_lines > 0 then
+    -- Apply exact syntax highlighted extmarks from termaid styled-json
+    for r_idx, v_row in ipairs(result.virt_lines) do
+      local col = 2 -- account for the leading 2-space margin
+      local line_nr = r_idx -- 0-indexed line_nr corresponding to lines[line_nr + 1]
+      for _, chunk in ipairs(v_row) do
+        local txt = chunk[1] or ""
+        local hl = chunk[2] or "None"
+        local byte_len = #txt
+        if hl ~= "None" and byte_len > 0 then
+          pcall(vim.api.nvim_buf_set_extmark, preview_buf, NS_ID, line_nr, col, {
+            end_col = col + byte_len,
+            hl_group = hl,
+            priority = 90,
+          })
+        end
+        col = col + byte_len
+      end
+    end
+  else
+    style_ascii_buffer(preview_buf)
+  end
+
   bind_keys(preview_buf)
 end
 

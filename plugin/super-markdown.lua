@@ -32,6 +32,8 @@ local subcommands = {
   sticky_enable = function() require("super-markdown").sticky_enable() end,
   sticky_disable = function() require("super-markdown").sticky_disable() end,
   mermaid = function() require("super-markdown").mermaid_preview() end,
+  mermaid_preview = function() require("super-markdown").mermaid_preview() end,
+  mermaid_renderer = function(args) require("super-markdown").set_mermaid_renderer(args and args[2]) end,
   checkbox = function() require("super-markdown").checkbox_toggle() end,
   table_format = function() require("super-markdown").table_format() end,
   link = function() require("super-markdown").follow_link() end,
@@ -138,6 +140,15 @@ end, {
         return matches
       elseif sub == "auto_refresh" then
         local opts = { "toggle", "on", "off", "500", "1000", "2000" }
+        local matches = {}
+        for _, opt in ipairs(opts) do
+          if vim.startswith(opt, words[3] or "") then
+            table.insert(matches, opt)
+          end
+        end
+        return matches
+      elseif sub == "mermaid_renderer" then
+        local opts = { "auto", "termaid", "internal" }
         local matches = {}
         for _, opt in ipairs(opts) do
           if vim.startswith(opt, words[3] or "") then

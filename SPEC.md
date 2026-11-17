@@ -154,7 +154,10 @@ super-markdown.nvim/
   1. Local CLI: Check for `mmdc` executable in `$PATH`.
   2. Cloud API: Async HTTPS POST to `https://mermaid.ink/svg/<base64>` or `kroki.io` using `vim.system({"curl", ...})`.
   3. Image conversion: Uses `/usr/bin/magick` (or `rsvg-convert`) to convert SVG to high-res PNG.
-  4. ASCII Fallback: Built-in deterministic text graph generator if offline or CLI unavailable.
+  4. Text / ASCII Engines:
+     - **Termaid Engine** (`renderer = "termaid"` or `"auto"`): When `termaid` is installed, uses `termaid --format styled-json` for A* edge-routed 2D terminal diagrams with live extmark style mapping (`node`, `edge`, `arrow`, `label`, `edge_label`, `subgraph`) across 18 Mermaid diagram types.
+     - **Internal Engine** (`renderer = "internal"`): Pure-Lua standalone engine with zero dependencies, upgraded with true 2D multi-branch horizontal (`LR` / `RL`) flowcharts, decision diamonds, and relationship routing.
+     - **Dynamic Switcher**: Toggle engines at runtime with `:SuperMarkdown mermaid_renderer [auto|termaid|internal]` or press `t` in the preview popup.
 - **Display Modes**:
   - **Inline Status Extmark**: Displays `󰡷 [Mermaid: Ready | Press <leader>mp to preview]` above diagram.
   - **Floating Preview Window (`<leader>mp`)**:
