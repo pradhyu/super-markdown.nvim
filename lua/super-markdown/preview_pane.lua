@@ -1481,6 +1481,14 @@ end
 
 --- Check tracked markdown buffers for external/AI disk edits and refresh visual mode, preview pane, and TOC sidebar
 function M.check_and_refresh_buffers(force)
+  if not M.is_open() and not force then
+    local ok_sb, sb = pcall(require, "super-markdown.toc.sidebar")
+    if not (ok_sb and sb.is_open()) then
+      M.stop_auto_refresh()
+      return
+    end
+  end
+
   local target_bufs = {}
   local seen = {}
   local function add_buf(b)
@@ -1531,7 +1539,7 @@ function M.check_and_refresh_buffers(force)
           disk_changed = true
         end
 
-        if (disk_changed or is_first_check or force) and not vim.bo[buf].modified and not in_insert then
+        if (disk_changed or force) and not vim.bo[buf].modified and not in_insert then
           pcall(function()
             vim.bo[buf].autoread = true
           end)
@@ -1616,9 +1624,12 @@ function M.stop_auto_refresh()
   end
 end
 
-function M.start_auto_refresh()
+function M.start_auto_refresh(force)
   M.stop_auto_refresh()
   if not M.is_auto_refresh_enabled() then
+    return
+  end
+  if not force and not M.is_open() then
     return
   end
   local interval = M.get_auto_refresh_interval()

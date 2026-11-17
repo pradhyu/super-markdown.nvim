@@ -2,18 +2,57 @@ local config = require("super-markdown.config")
 
 local M = {}
 
---- Check if a 1-indexed line number is inside a fenced code block (``` or ~~~)
---- @param lnum number
---- @return boolean
-local function is_in_codeblock(lnum)
-  local in_block = false
-  for i = 1, lnum - 1 do
-    local l = vim.fn.getline(i)
-    if l:match("^%s*```") or l:match("^%s*~~~") then
-      in_block = not in_block
+local cb_cache = {} -- bufnr -> { tick = changedtick, intervals = { {start, finish}, ... } }
+
+--- Get cached codeblock intervals for a buffer, refreshed only when changedtick changes
+--- @param bufnr number
+--- @return table
+local function get_codeblock_intervals(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return {}
+  end
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local c = cb_cache[bufnr]
+  if c and c.tick == tick then
+    return c.intervals
+  end
+
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  local intervals = {}
+  local block_start = nil
+
+  for i, line in ipairs(lines) do
+    if line:match("^%s*```") or line:match("^%s*~~~") then
+      if not block_start then
+        block_start = i
+      else
+        table.insert(intervals, { block_start, i })
+        block_start = nil
+      end
     end
   end
-  return in_block
+  if block_start then
+    table.insert(intervals, { block_start, #lines })
+  end
+
+  cb_cache[bufnr] = { tick = tick, intervals = intervals }
+  return intervals
+end
+
+--- Check if a 1-indexed line number is inside a fenced code block (``` or ~~~)
+--- @param lnum number
+--- @param bufnr number|nil
+--- @return boolean
+local function is_in_codeblock(lnum, bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local intervals = get_codeblock_intervals(bufnr)
+  for _, iv in ipairs(intervals) do
+    if lnum >= iv[1] and lnum <= iv[2] then
+      return true
+    end
+  end
+  return false
 end
 
 --- Calculate fold level for a markdown line.

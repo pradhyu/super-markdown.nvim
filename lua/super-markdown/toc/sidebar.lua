@@ -191,7 +191,12 @@ local function attach_source_buf_autocmds()
     buffer = source_buf,
     callback = function() M.sync_cursor() end,
   })
-  vim.api.nvim_create_autocmd({ "TextChanged", "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
+  vim.api.nvim_create_autocmd("TextChanged", {
+    group = buffer_augroup_id,
+    buffer = source_buf,
+    callback = function() M.debounced_refresh(100) end,
+  })
+  vim.api.nvim_create_autocmd({ "BufWritePost", "BufReadPost", "FileChangedShellPost" }, {
     group = buffer_augroup_id,
     buffer = source_buf,
     callback = function() M.refresh() end,
@@ -300,6 +305,14 @@ function M.close()
   collapsed_headings = {}
   max_level = nil
 
+  if refresh_timer then
+    pcall(function()
+      refresh_timer:stop()
+      refresh_timer:close()
+    end)
+    refresh_timer = nil
+  end
+
   if prev_win and vim.api.nvim_win_is_valid(prev_win) and prev_win ~= win_to_close then
     pcall(vim.api.nvim_set_current_win, prev_win)
   end
@@ -343,6 +356,36 @@ function M.toggle(opts)
     return
   end
   M.open(opts)
+end
+
+local refresh_timer = nil
+
+function M.debounced_refresh(delay_ms)
+  delay_ms = delay_ms or 100
+  if refresh_timer then
+    pcall(function()
+      refresh_timer:stop()
+      refresh_timer:close()
+    end)
+    refresh_timer = nil
+  end
+  refresh_timer = vim.uv.new_timer()
+  refresh_timer:start(
+    delay_ms,
+    0,
+    vim.schedule_wrap(function()
+      if refresh_timer then
+        pcall(function()
+          refresh_timer:stop()
+          refresh_timer:close()
+        end)
+        refresh_timer = nil
+      end
+      if M.is_open() then
+        M.refresh()
+      end
+    end)
+  )
 end
 
 function M.refresh()
@@ -834,13 +877,6 @@ function M.open(opts)
   end
 
   bind_sidebar_keys()
-
-  pcall(function()
-    local pp = require("super-markdown.preview_pane")
-    if pp.is_auto_refresh_enabled() then
-      pp.start_auto_refresh()
-    end
-  end)
 
   local focus_sb = opts.focus_sidebar
   if focus_sb == nil then

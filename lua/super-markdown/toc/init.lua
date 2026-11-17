@@ -65,7 +65,7 @@ function M.get_headings(bufnr)
 
   local sec_diffs = {}
   local ok_df, diff_mod = pcall(require, "super-markdown.spec.diff")
-  if ok_df and diff_mod.get_section_diffs then
+  if ok_df and diff_mod.get_section_diffs and diff_mod.is_enabled and diff_mod.is_enabled(bufnr) then
     pcall(function()
       sec_diffs = diff_mod.get_section_diffs(bufnr) or {}
     end)

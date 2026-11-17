@@ -237,6 +237,12 @@ function M.render(bufnr)
   end
 end
 
+function M.is_enabled(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local st = diff_states[bufnr]
+  return st ~= nil and st.enabled == true
+end
+
 --- Clear diff indicators
 --- @param bufnr number
 function M.clear(bufnr)
