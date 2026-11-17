@@ -35,27 +35,57 @@ function M.get_command()
   local t_opts = (config.options.mermaid and config.options.mermaid.termaid) or {}
   local custom_cmd = t_opts.cmd or "termaid"
 
-  -- 1. Check configured command
-  if vim.fn.executable(custom_cmd) == 1 then
-    _cached_cmd = { custom_cmd }
+  -- 1. Table command specified directly (e.g., { "python3", "-m", "termaid" } or { "/custom/bin/termaid" })
+  if type(custom_cmd) == "table" and #custom_cmd > 0 then
+    local expanded_tbl = {}
+    for i, part in ipairs(custom_cmd) do
+      if i == 1 then
+        table.insert(expanded_tbl, vim.fn.expand(part))
+      else
+        table.insert(expanded_tbl, tostring(part))
+      end
+    end
+    _cached_cmd = expanded_tbl
     return _cached_cmd
   end
 
-  -- 2. Check ~/.local/bin/termaid
+  -- 2. String command specified
+  if type(custom_cmd) == "string" then
+    local expanded = vim.fn.expand(custom_cmd)
+    if vim.fn.executable(expanded) == 1 then
+      _cached_cmd = { expanded }
+      return _cached_cmd
+    end
+
+    -- Check if string is a multi-token command line (e.g. "python3 -m termaid" or "uv run termaid")
+    if custom_cmd:find("%s+") then
+      local parts = vim.split(custom_cmd, "%s+", { trimempty = true })
+      if #parts > 0 then
+        local first = vim.fn.expand(parts[1])
+        if vim.fn.executable(first) == 1 then
+          parts[1] = first
+          _cached_cmd = parts
+          return _cached_cmd
+        end
+      end
+    end
+  end
+
+  -- 3. Check ~/.local/bin/termaid
   local local_bin = vim.fn.expand("~/.local/bin/termaid")
   if vim.fn.executable(local_bin) == 1 then
     _cached_cmd = { local_bin }
     return _cached_cmd
   end
 
-  -- 3. Check ~/.local/share/super-markdown/termaid-venv/bin/termaid
+  -- 4. Check ~/.local/share/super-markdown/termaid-venv/bin/termaid
   local venv_bin = vim.fn.expand("~/.local/share/super-markdown/termaid-venv/bin/termaid")
   if vim.fn.executable(venv_bin) == 1 then
     _cached_cmd = { venv_bin }
     return _cached_cmd
   end
 
-  -- 4. Check python3 -m termaid
+  -- 5. Check python3 -m termaid
   if vim.fn.executable("python3") == 1 then
     local test = vim.system({ "python3", "-m", "termaid", "--version" }):wait(1500)
     if test.code == 0 then
@@ -64,8 +94,9 @@ function M.get_command()
     end
   end
 
-  -- Fallback to default name
-  return { custom_cmd }
+  -- Fallback to configured string
+  local fallback = type(custom_cmd) == "string" and vim.fn.expand(custom_cmd) or "termaid"
+  return { fallback }
 end
 
 --- Clear cached command (e.g. after install or config change)
@@ -163,6 +194,13 @@ function M.render(mermaid_code, opts)
   if theme and theme ~= "" and format == "text" then
     table.insert(args, "--theme")
     table.insert(args, theme)
+  end
+
+  local extra_args = opts.args or opts.extra_args or t_opts.args or t_opts.extra_args
+  if type(extra_args) == "table" then
+    for _, ea in ipairs(extra_args) do
+      table.insert(args, tostring(ea))
+    end
   end
 
   local res = vim.system(args, { stdin = mermaid_code }):wait(3500)

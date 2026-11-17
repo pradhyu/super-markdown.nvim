@@ -45,6 +45,7 @@ end
 function M.setup(user_opts)
   config.setup(user_opts)
   highlights.setup()
+  pcall(function() require("super-markdown.mermaid.termaid").clear_cache() end)
 
   -- Register global autocommands
   local augroup = vim.api.nvim_create_augroup("SuperMarkdownGlobal", { clear = true })
