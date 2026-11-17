@@ -1609,6 +1609,68 @@ do
   assert_eq(joined:find("┬") ~= nil, true, "Contains branch T-junction ┬ for multi-target split")
 end
 
+-- 41. Test Human Spec Review Cockpit, Invariants, and Traceability Matrix
+do
+  print("\n[Test 41] Human Spec Review Cockpit, Invariant Validator & Traceability Matrix")
+  local invariants = require("super-markdown.spec.invariants")
+  local traceability = require("super-markdown.spec.traceability")
+  local review_session = require("super-markdown.spec.review_session")
+
+  local audit_spec = {
+    "# Autonomous Trading Engine Spec",
+    "",
+    "## 1. Gateway API",
+    "POST /v2/orders",
+    "GET /v2/order",
+    "Creates an order with 200 OK or 201 Created.",
+    "",
+    "## 2. Requirements",
+    "**REQ-01**: Low latency matching",
+    "@impl: lua/super-markdown/init.lua:10",
+    "@test: tests/run_all.lua:20",
+    "",
+    "**REQ-02**: Audit trail logging",
+    "",
+    "## 3. Worker Code",
+    "```lua",
+    "local token = os.getenv(\"VAULT_AUTH_TOKEN\")",
+    "```",
+  }
+  local a_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(a_buf, 0, -1, false, audit_spec)
+  vim.api.nvim_set_current_buf(a_buf)
+
+  -- Check invariant & entity extraction
+  local inv_rep = invariants.check(a_buf)
+  local has_drift = false
+  local has_undeclared = false
+  for _, iss in ipairs(inv_rep.issues) do
+    if iss.kind == "endpoint_drift" then has_drift = true end
+    if iss.kind == "undeclared_env" and iss.message:match("VAULT_AUTH_TOKEN") then has_undeclared = true end
+  end
+  assert_eq(has_drift, true, "Flagged route drift /v2/orders vs /v2/order")
+  assert_eq(has_undeclared, true, "Flagged undeclared env var VAULT_AUTH_TOKEN")
+
+  -- Check floating invariant UI open/close
+  invariants.open(a_buf)
+  assert_eq(invariants.close(), true, "Invariants report window closed cleanly")
+
+  -- Check traceability matrix
+  local tr_rep = traceability.compute(a_buf)
+  assert_eq(tr_rep.total, 2, "Found 2 requirements in spec")
+  assert_eq(tr_rep.implemented, 1, "1 requirement implemented")
+  assert_eq(tr_rep.tested, 1, "1 requirement tested")
+  traceability.open(a_buf)
+  assert_eq(traceability.close(), true, "Traceability window closed cleanly")
+
+  -- Check review cockpit HUD session
+  review_session.start(a_buf)
+  review_session.next()
+  review_session.approve()
+  assert_eq(review_session.get_current_section().review_status, "APPROVED", "Approved section via review cockpit")
+  assert_eq(review_session.close(), true, "Review cockpit closed cleanly")
+end
+
 print(string.format("\n=== Test Results: %d Passed, %d Failed ===", passed, failed))
 if failed > 0 then
   vim.cmd("cquit 1")

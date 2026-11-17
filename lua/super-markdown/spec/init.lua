@@ -14,6 +14,18 @@ M.resolve_reference = analyzer.resolve_reference
 M.new_spec = templates.insert_template
 M.cycle_status = templates.cycle_status
 M.pick = picker.open
+M.invariants = function(bufnr) require("super-markdown.spec.invariants").open(bufnr) end
+M.check_invariants = function(bufnr) return require("super-markdown.spec.invariants").check(bufnr) end
+M.traceability = function(bufnr) require("super-markdown.spec.traceability").open(bufnr) end
+M.compute_traceability = function(bufnr) return require("super-markdown.spec.traceability").compute(bufnr) end
+M.review_session = function(bufnr) require("super-markdown.spec.review_session").start(bufnr) end
+M.review_approve = function(bufnr) require("super-markdown.spec.review").review_approve(bufnr) end
+M.review_reject = function(bufnr, reason) require("super-markdown.spec.review").review_reject(bufnr, reason) end
+M.review_question = function(bufnr, q) require("super-markdown.spec.review").review_question(bufnr, q) end
+M.review_comment = function(bufnr, c) require("super-markdown.spec.review").review_comment(bufnr, c) end
+M.review_approve_all = function(bufnr) require("super-markdown.spec.review").review_approve_all(bufnr) end
+M.review_reject_all = function(bufnr, reason) require("super-markdown.spec.review").review_reject_all(bufnr, reason) end
+M.export_prompt = function(bufnr) return require("super-markdown.spec.review").export_prompt(bufnr) end
 
 --- Run spec linter and notify user
 --- @param bufnr number|nil

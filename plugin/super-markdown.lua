@@ -96,6 +96,11 @@ local subcommands = {
   review_approve_all = function() require("super-markdown").review_approve_all() end,
   review_reject_all = function(args) require("super-markdown").review_reject_all(nil, args and args[2]) end,
   review_export = function() require("super-markdown").review_export() end,
+  prompt_export = function() require("super-markdown").prompt_export() end,
+  review_session = function() require("super-markdown").review_session() end,
+  invariants = function() require("super-markdown").spec_invariants() end,
+  spec_invariants = function() require("super-markdown").spec_invariants() end,
+  traceability = function() require("super-markdown").traceability() end,
   breadcrumb = function() require("super-markdown").breadcrumb() end,
 }
 

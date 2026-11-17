@@ -4,19 +4,28 @@ local M = {}
 
 --- Find current section or insert line beneath current heading
 --- @param bufnr number
+--- @param lnum? number
 --- @return number target_lnum, string section_title
-local function get_section_insert_pos(bufnr)
+local function get_section_insert_pos(bufnr, lnum)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local cur_line = vim.api.nvim_win_get_cursor(0)[1]
-  local sec = analyzer.get_section_at(bufnr, cur_line)
+  local cur_line = lnum
+  if not cur_line then
+    local win = vim.fn.bufwinid(bufnr)
+    if win ~= -1 and vim.api.nvim_win_is_valid(win) then
+      cur_line = vim.api.nvim_win_get_cursor(win)[1]
+    else
+      cur_line = vim.api.nvim_win_get_cursor(0)[1]
+    end
+  end
 
+  local sec = analyzer.get_section_at(bufnr, cur_line)
   if sec then
     return sec.lnum, sec.title
   end
 
   local all_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   for l = cur_line, 1, -1 do
-    if all_lines[l]:match("^%s*#+%s") then
+    if all_lines[l] and all_lines[l]:match("^%s*#+%s") then
       return l, all_lines[l]:gsub("^%s*#+%s*", "")
     end
   end
@@ -26,9 +35,10 @@ end
 
 --- Approve the active spec section with human review timestamp
 --- @param bufnr? number
-function M.review_approve(bufnr)
+--- @param lnum? number
+function M.review_approve(bufnr, lnum)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local head_lnum, title = get_section_insert_pos(bufnr)
+  local head_lnum, title = get_section_insert_pos(bufnr, lnum)
   local date_str = os.date("%Y-%m-%d %H:%M")
   local approve_badge = string.format("> [!APPROVED] Reviewed by human on %s", date_str)
 
@@ -47,15 +57,16 @@ end
 --- Add a human review question / directive for the AI agent
 --- @param bufnr? number
 --- @param question_text? string
-function M.review_question(bufnr, question_text)
+--- @param lnum? number
+function M.review_question(bufnr, question_text, lnum)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local head_lnum, title = get_section_insert_pos(bufnr)
+  local head_lnum, title = get_section_insert_pos(bufnr, lnum)
 
   local function do_insert(text)
     if not text or vim.trim(text) == "" then return end
     local q_badge = string.format("> [!QUESTION] @agent: %s", vim.trim(text))
-    local cur_cursor = vim.api.nvim_win_get_cursor(0)[1]
-    vim.api.nvim_buf_set_lines(bufnr, cur_cursor, cur_cursor, false, { "", q_badge })
+    local insert_lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
+    vim.api.nvim_buf_set_lines(bufnr, insert_lnum, insert_lnum, false, { "", q_badge })
     vim.notify(string.format("SuperMarkdown Review: Added directive for AI agent in '%s' 󰋽", vim.trim(title)), vim.log.levels.INFO)
   end
 
@@ -71,16 +82,17 @@ end
 --- Add an inline human review comment
 --- @param bufnr? number
 --- @param comment_text? string
-function M.review_comment(bufnr, comment_text)
+--- @param lnum? number
+function M.review_comment(bufnr, comment_text, lnum)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local head_lnum, title = get_section_insert_pos(bufnr)
+  local head_lnum, title = get_section_insert_pos(bufnr, lnum)
 
   local function do_insert(text)
     if not text or vim.trim(text) == "" then return end
     local date_str = os.date("%Y-%m-%d %H:%M")
     local r_badge = string.format("> [!REVIEW] @human (%s): %s", date_str, vim.trim(text))
-    local cur_cursor = vim.api.nvim_win_get_cursor(0)[1]
-    vim.api.nvim_buf_set_lines(bufnr, cur_cursor, cur_cursor, false, { "", r_badge })
+    local insert_lnum = lnum or vim.api.nvim_win_get_cursor(0)[1]
+    vim.api.nvim_buf_set_lines(bufnr, insert_lnum, insert_lnum, false, { "", r_badge })
     vim.notify(string.format("SuperMarkdown Review: Added comment in '%s' 󰋽", vim.trim(title)), vim.log.levels.INFO)
   end
 
@@ -96,9 +108,10 @@ end
 --- Request revision / reject active section
 --- @param bufnr? number
 --- @param reason? string
-function M.review_reject(bufnr, reason)
+--- @param lnum? number
+function M.review_reject(bufnr, reason, lnum)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local head_lnum, title = get_section_insert_pos(bufnr)
+  local head_lnum, title = get_section_insert_pos(bufnr, lnum)
 
   local function do_reject(text)
     local date_str = os.date("%Y-%m-%d %H:%M")
@@ -299,7 +312,17 @@ function M.review_export(bufnr)
     table.insert(out, "## 2. Sections Requiring Revision")
     for _, sec in ipairs(summary.rejected_sections) do
       table.insert(out, string.format("### %s (Line %d)", sec.title, sec.lnum))
-      table.insert(out, "- Human reviewer rejected this section. Please review the concerns and update the content.")
+      local reason = nil
+      local buf_lines = vim.api.nvim_buf_get_lines(bufnr, sec.lnum, math.min(sec.end_lnum, sec.lnum + 6), false)
+      for _, bl in ipairs(buf_lines) do
+        local r = bl:match("^>%s*%[!REJECTED%].-—%s*(.*)$")
+        if r and r ~= "" then reason = r break end
+      end
+      if reason then
+        table.insert(out, string.format("- **Revision Directives**: %s", reason))
+      else
+        table.insert(out, "- Human reviewer rejected this section. Please review the concerns and update the content.")
+      end
     end
     table.insert(out, "")
   end
@@ -366,5 +389,7 @@ function M.review_export(bufnr)
 
   return prompt_text
 end
+
+M.export_prompt = M.review_export
 
 return M

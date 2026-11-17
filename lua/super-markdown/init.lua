@@ -225,6 +225,9 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.review_approve_all, M.review_approve_all, "Mark Entire Spec APPROVED")
   bmap("n", km.review_reject_all, M.review_reject_all, "Request Changes on Entire Spec")
   bmap("n", km.review_export, M.review_export, "Export Agent Review Feedback Prompt")
+  bmap("n", km.review_session, M.review_session, "Open Interactive Spec Review Cockpit")
+  bmap("n", km.spec_invariants, M.spec_invariants, "Check Domain Entity & Contract Invariants")
+  bmap("n", km.traceability, M.traceability, "Requirement-to-Code Traceability Matrix")
   bmap("n", km.breadcrumb, M.breadcrumb, "Show Active Breadcrumb & Stats HUD")
 
   if config.options.tools.table_helpers then
@@ -378,6 +381,13 @@ M.review_comment = spec_review.review_comment
 M.review_approve_all = spec_review.review_approve_all
 M.review_reject_all = spec_review.review_reject_all
 M.review_export = spec_review.review_export
+M.prompt_export = spec_review.export_prompt
+M.review_session = function(bufnr) require("super-markdown.spec.review_session").start(bufnr) end
+M.close_review_session = function() require("super-markdown.spec.review_session").close() end
+M.spec_invariants = function(bufnr) require("super-markdown.spec.invariants").open(bufnr) end
+M.check_invariants = function(bufnr) return require("super-markdown.spec.invariants").check(bufnr) end
+M.traceability = function(bufnr) require("super-markdown.spec.traceability").open(bufnr) end
+M.compute_traceability = function(bufnr) return require("super-markdown.spec.traceability").compute(bufnr) end
 M.review_summary = spec_review.get_review_summary
 M.next_risk = spec_nav.jump_next_risk
 M.prev_risk = spec_nav.jump_prev_risk

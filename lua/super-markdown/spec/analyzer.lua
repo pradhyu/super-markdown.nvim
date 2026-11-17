@@ -6,7 +6,14 @@ local NS_LINT = vim.api.nvim_create_namespace("super_markdown_spec_lint")
 M.AMBIGUOUS_PATTERNS = {
   { pattern = "%f[%a][sS]hould be fast%f[%A]", msg = "Vague performance requirement ('should be fast') — specify target latency/throughput SLO (e.g., '< 50ms p99')." },
   { pattern = "%f[%a][aA]s fast as possible%f[%A]", msg = "Unbounded performance phrase ('as fast as possible') — define concrete numeric bounds." },
+  { pattern = "%f[%a][hH]igh throughput%f[%A]", msg = "Vague throughput ('high throughput') — specify numeric target (e.g., '>= 5,000 req/sec')." },
+  { pattern = "%f[%a][lL]ow latency%f[%A]", msg = "Vague latency ('low latency') — specify numeric SLA (e.g., 'p99 < 80ms')." },
+  { pattern = "%f[%a][mM]inimal overhead%f[%A]", msg = "Unbounded claim ('minimal overhead') — specify memory/CPU limits." },
+  { pattern = "%f[%a][iI]ndustry standard%f[%A]", msg = "Ambiguous quality bar ('industry standard') — specify exact RFC, cipher suite, or compliance standard." },
   { pattern = "%f[%a][hH]andle errors gracefully%f[%A]", msg = "Ambiguous error handling ('handle errors gracefully') — specify exact error codes, retry policy, or fallback behavior." },
+  { pattern = "%f[%a][rR]obust error handling%f[%A]", msg = "Vague error handling ('robust error handling') — define specific error schemas and retry strategies." },
+  { pattern = "%f[%a][sS]ufficiently%f[%A]", msg = "Subjective adverb ('sufficiently') — specify measurable metric." },
+  { pattern = "%f[%a][wW]ill be handled%f[%A]", msg = "Passive agency ('will be handled') — explicitly state which service/component handles this." },
   { pattern = "%f[%a][eE]tc%.?", msg = "Open-ended list ('etc.') — enumerate all expected cases explicitly for deterministic LLM code generation." },
   { pattern = "%f[%a][tT][bB][dD]%f[%A]", msg = "Unresolved placeholder ('TBD') — resolve before generating implementation." },
   { pattern = "%f[%a][tT][oO][dD][oO]%f[%A]", msg = "Unresolved 'TODO' marker in specification text." },
@@ -744,6 +751,37 @@ function M.lint(bufnr, publish_diagnostics)
             })
           end
         end
+      end
+    end
+  end
+
+  -- 5. Check Happy-Path Bias (endpoints with 200/201 but no 4xx/5xx failure contract)
+  local analysis = M.analyze(bufnr)
+  for _, sec in ipairs(analysis.sections or {}) do
+    local sec_lines = vim.api.nvim_buf_get_lines(bufnr, sec.lnum - 1, sec.end_lnum, false)
+    local sec_text = table.concat(sec_lines, "\n")
+    local method, path = sec_text:match("%f[%a](%u+)%s+([/%w_%-]+)%f[%A]")
+    if method and (method == "GET" or method == "POST" or method == "PUT" or method == "DELETE" or method == "PATCH") then
+      local has_success = sec_text:match("200%s+OK") or sec_text:match("201%s+Created") or sec_text:match("204%s+No%s+Content")
+      local has_error = sec_text:match("4%d%d") or sec_text:match("5%d%d") or sec_text:match("[eE]rror") or sec_text:match("[fF]ail") or sec_text:match("[eE]xception")
+      if has_success and not has_error then
+        local msg = string.format("Happy-Path Bias: Endpoint '%s %s' specifies success but omits failure/error contracts (4xx/5xx).", method, path)
+        table.insert(issues, {
+          lnum = sec.lnum,
+          col = 0,
+          end_col = #sec.title,
+          severity = vim.diagnostic.severity.WARN,
+          kind = "happy_path_bias",
+          message = msg,
+        })
+        table.insert(diagnostics, {
+          lnum = sec.lnum - 1,
+          col = 0,
+          end_col = #sec.title,
+          severity = vim.diagnostic.severity.WARN,
+          source = "super-markdown",
+          message = msg,
+        })
       end
     end
   end
