@@ -2376,12 +2376,12 @@ end
 
 local function render_timeline(code, opts)
   opts = opts or {}
-  local title = "󰡷 Mermaid Timeline / Journey (Live)"
+  local title = "󰡷 Mermaid Timeline (Live)"
   local out = {}
 
   for _, raw in ipairs(vim.split(code, "\n")) do
     local line = vim.trim(raw)
-    if line == "" or line:match("^%%") or line:match("^timeline") or line:match("^journey") then
+    if line == "" or line:match("^%%") or line:match("^timeline") then
       -- skip
     elseif line:match("^title%s+(.+)$") then
       title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
@@ -2400,6 +2400,496 @@ local function render_timeline(code, opts)
   if #out == 0 then
     out = { "(Empty timeline)" }
   end
+  return frame_diagram(out, title, opts)
+end
+
+local function render_journey(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid User Journey (Live)"
+  local sections = {}
+  local cur_section = { name = "General Flow", tasks = {} }
+  table.insert(sections, cur_section)
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^journey") then
+      -- skip
+    elseif line:match("^title%s+(.+)$") then
+      title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
+    elseif line:match("^section%s+(.+)$") then
+      local sec_name = vim.trim(line:match("^section%s+(.+)$"))
+      cur_section = { name = sec_name, tasks = {} }
+      table.insert(sections, cur_section)
+    else
+      local task, score_str, actors = line:match("^([^:]+):%s*(%d+)%s*:%s*(.+)$")
+      if not task then
+        task, score_str = line:match("^([^:]+):%s*(%d+)%s*$")
+      end
+      if task and score_str then
+        local score = math.max(1, math.min(5, tonumber(score_str) or 3))
+        table.insert(cur_section.tasks, {
+          name = vim.trim(task),
+          score = score,
+          actors = actors and vim.trim(actors) or "",
+        })
+      elseif line ~= "" then
+        table.insert(cur_section.tasks, {
+          name = line,
+          score = 3,
+          actors = "",
+        })
+      end
+    end
+  end
+
+  local out = {}
+  local star_full = "★"
+  local star_empty = "☆"
+
+  for _, sec in ipairs(sections) do
+    if #sec.tasks > 0 then
+      if #out > 0 then
+        table.insert(out, "")
+      end
+      table.insert(out, "  ╭┈┈ 󰉋 " .. sec.name .. " ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈╮")
+      for _, t in ipairs(sec.tasks) do
+        local stars = string.rep(star_full, t.score) .. string.rep(star_empty, 5 - t.score)
+        local actor_str = (t.actors ~= "") and ("  [" .. t.actors .. "]") or ""
+        table.insert(
+          out,
+          string.format("    • %-24s  %s (%d/5)%s", truncate_str(t.name, 24), stars, t.score, actor_str)
+        )
+      end
+    end
+  end
+
+  if #out == 0 then
+    out = { "(Empty user journey)" }
+  end
+  return frame_diagram(out, title, opts)
+end
+
+local function render_kanban(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Kanban Board (Live)"
+  local columns = {}
+  local cur_col = nil
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local trimmed = vim.trim(raw)
+    if trimmed == "" or trimmed:match("^%%") or trimmed:match("^kanban") then
+      -- skip
+    elseif raw:match("^%s%s%s%s") or (raw:match("^%s%s") and cur_col and (trimmed:match("^%[") or trimmed:match("@%{"))) then
+      if not cur_col then
+        cur_col = { name = "Tasks", items = {} }
+        table.insert(columns, cur_col)
+      end
+      local card = trimmed:match("%[(.-)%]") or trimmed:match('label:%s*"([^"]+)"') or trimmed:gsub("^[^%w]+", "")
+      card = vim.trim(card)
+      if card ~= "" then
+        table.insert(cur_col.items, card)
+      end
+    elseif not raw:match("^%s%s%s%s") and trimmed ~= "" then
+      local col_title = trimmed:match("%[(.-)%]") or trimmed
+      col_title = vim.trim(col_title)
+      cur_col = { name = col_title, items = {} }
+      table.insert(columns, cur_col)
+    end
+  end
+
+  if #columns == 0 then
+    return frame_diagram({ "(Empty kanban board)" }, title, opts)
+  end
+
+  local max_w = opts.max_width or 90
+  local num_cols = #columns
+  local col_w = math.max(16, math.min(28, math.floor((max_w - 4 - (num_cols - 1) * 2) / num_cols)))
+
+  local total_w = num_cols * col_w + (num_cols - 1) * 2
+  if total_w <= max_w and num_cols <= 4 then
+    local col_boxes = {}
+    local max_h = 0
+    for _, col in ipairs(columns) do
+      local c_lines = {}
+      local title_max = math.max(4, col_w - 6)
+      local c_title = string.format("%s (%d)", truncate_str(col.name, title_max), #col.items)
+      local dash_count = math.max(1, col_w - 4 - str_width(c_title))
+      local top_line = "┌─ " .. c_title .. " " .. string.rep("─", dash_count - 1) .. "┐"
+      table.insert(c_lines, top_line)
+      if #col.items == 0 then
+        table.insert(c_lines, "│ " .. pad_str("(empty)", col_w - 4, "center") .. " │")
+      else
+        for _, it in ipairs(col.items) do
+          local it_w = col_w - 6
+          local wrapped = wrap_label_lines(clean_label_lines(it), it_w, 2)
+          for _, wl in ipairs(wrapped) do
+            table.insert(c_lines, "│ • " .. pad_str(truncate_str(wl, it_w), it_w, "left") .. " │")
+          end
+        end
+      end
+      table.insert(c_lines, "└" .. string.rep("─", col_w - 2) .. "┘")
+      if #c_lines > max_h then max_h = #c_lines end
+      table.insert(col_boxes, c_lines)
+    end
+
+    for _, c_lines in ipairs(col_boxes) do
+      local last = table.remove(c_lines)
+      while #c_lines < max_h - 1 do
+        table.insert(c_lines, "│" .. string.rep(" ", col_w - 2) .. "│")
+      end
+      table.insert(c_lines, last)
+    end
+
+    local out = {}
+    for r = 1, max_h do
+      local row_parts = { "  " }
+      for ci, c_lines in ipairs(col_boxes) do
+        table.insert(row_parts, c_lines[r])
+        if ci < #col_boxes then
+          table.insert(row_parts, "  ")
+        end
+      end
+      table.insert(out, table.concat(row_parts))
+    end
+    return frame_diagram(out, title, opts)
+  else
+    local out = {}
+    for _, col in ipairs(columns) do
+      if #out > 0 then table.insert(out, "") end
+      local c_title = string.format("%s (%d)", col.name, #col.items)
+      table.insert(out, "  ┌─ " .. c_title .. " " .. string.rep("─", math.max(1, 40 - str_width(c_title))) .. "┐")
+      if #col.items == 0 then
+        table.insert(out, "  │   (empty)                                  │")
+      else
+        for _, it in ipairs(col.items) do
+          table.insert(out, string.format("  │ • %-38s │", truncate_str(it, 38)))
+        end
+      end
+      table.insert(out, "  └" .. string.rep("─", 44) .. "┘")
+    end
+    return frame_diagram(out, title, opts)
+  end
+end
+
+local function render_quadrant(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Quadrant Chart (Live)"
+  local x_axis = { left = "Low", right = "High" }
+  local y_axis = { bottom = "Low", top = "High" }
+  local q_labels = {
+    q1 = "Quadrant 1",
+    q2 = "Quadrant 2",
+    q3 = "Quadrant 3",
+    q4 = "Quadrant 4",
+  }
+  local items = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^quadrantChart") then
+      -- skip
+    elseif line:match("^title%s+(.+)$") then
+      title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
+    elseif line:match("^x%-axis%s+(.+)%s*%-%-%>%s*(.+)$") then
+      local l, r = line:match("^x%-axis%s+(.+)%s*%-%-%>%s*(.+)$")
+      x_axis.left = vim.trim(l)
+      x_axis.right = vim.trim(r)
+    elseif line:match("^y%-axis%s+(.+)%s*%-%-%>%s*(.+)$") then
+      local b, t = line:match("^y%-axis%s+(.+)%s*%-%-%>%s*(.+)$")
+      y_axis.bottom = vim.trim(b)
+      y_axis.top = vim.trim(t)
+    elseif line:match("^quadrant%-1%s+(.+)$") then
+      q_labels.q1 = vim.trim(line:match("^quadrant%-1%s+(.+)$"))
+    elseif line:match("^quadrant%-2%s+(.+)$") then
+      q_labels.q2 = vim.trim(line:match("^quadrant%-2%s+(.+)$"))
+    elseif line:match("^quadrant%-3%s+(.+)$") then
+      q_labels.q3 = vim.trim(line:match("^quadrant%-3%s+(.+)$"))
+    elseif line:match("^quadrant%-4%s+(.+)$") then
+      q_labels.q4 = vim.trim(line:match("^quadrant%-4%s+(.+)$"))
+    else
+      local name, xs, ys = line:match("^([^:]+):%s*%[%s*([%d%.]+)%s*,%s*([%d%.]+)%s*%]")
+      if name and xs and ys then
+        local x = tonumber(xs) or 0.5
+        local y = tonumber(ys) or 0.5
+        table.insert(items, { name = vim.trim(name), x = x, y = y })
+      end
+    end
+  end
+
+  local q1_items, q2_items, q3_items, q4_items = {}, {}, {}, {}
+  for _, it in ipairs(items) do
+    if it.x >= 0.5 and it.y >= 0.5 then
+      table.insert(q1_items, it)
+    elseif it.x < 0.5 and it.y >= 0.5 then
+      table.insert(q2_items, it)
+    elseif it.x < 0.5 and it.y < 0.5 then
+      table.insert(q3_items, it)
+    else
+      table.insert(q4_items, it)
+    end
+  end
+
+  local box_w = 26
+  local function make_q_cell(label, q_list)
+    local lines = {}
+    table.insert(lines, "  " .. truncate_str(label, box_w - 4))
+    if #q_list == 0 then
+      table.insert(lines, "  (none)")
+    else
+      for _, it in ipairs(q_list) do
+        table.insert(lines, "  • " .. truncate_str(it.name, box_w - 6))
+      end
+    end
+    return lines
+  end
+
+  local q2_c = make_q_cell("Q2: " .. q_labels.q2, q2_items)
+  local q1_c = make_q_cell("Q1: " .. q_labels.q1, q1_items)
+  local q3_c = make_q_cell("Q3: " .. q_labels.q3, q3_items)
+  local q4_c = make_q_cell("Q4: " .. q_labels.q4, q4_items)
+
+  local top_h = math.max(#q2_c, #q1_c)
+  local bot_h = math.max(#q3_c, #q4_c)
+
+  while #q2_c < top_h do table.insert(q2_c, "") end
+  while #q1_c < top_h do table.insert(q1_c, "") end
+  while #q3_c < bot_h do table.insert(q3_c, "") end
+  while #q4_c < bot_h do table.insert(q4_c, "") end
+
+  local out = {}
+  table.insert(out, string.format("              ▲ %s (Y-axis)", y_axis.top))
+  table.insert(out, "  ┌" .. string.rep("─", box_w) .. "┬" .. string.rep("─", box_w) .. "┐")
+  for i = 1, top_h do
+    table.insert(out, "  │" .. pad_str(q2_c[i], box_w, "left") .. "│" .. pad_str(q1_c[i], box_w, "left") .. "│")
+  end
+  table.insert(out, "  ├" .. string.rep("─", box_w) .. "┼" .. string.rep("─", box_w) .. "┤ ──▶ " .. truncate_str(x_axis.right, 20))
+  for i = 1, bot_h do
+    table.insert(out, "  │" .. pad_str(q3_c[i], box_w, "left") .. "│" .. pad_str(q4_c[i], box_w, "left") .. "│")
+  end
+  table.insert(out, "  └" .. string.rep("─", box_w) .. "┴" .. string.rep("─", box_w) .. "┘")
+  table.insert(out, string.format("  ▼ %s (Y)          ◄── %s (X)", truncate_str(y_axis.bottom, 16), truncate_str(x_axis.left, 16)))
+
+  return frame_diagram(out, title, opts)
+end
+
+local function render_packet(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Packet Structure (Live)"
+  local fields = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^packet") then
+      -- skip
+    elseif line:match("^title%s+(.+)$") then
+      title = "󰡷 " .. vim.trim(line:match("^title%s+(.+)$"))
+    else
+      local s_b, e_b, label = line:match("^(%d+)%s*%-%s*(%d+)%s*:%s*(.+)$")
+      if not s_b then
+        local b, l = line:match("^(%d+)%s*:%s*(.+)$")
+        if b and l then
+          s_b, e_b, label = b, b, l
+        end
+      end
+      if s_b and label then
+        label = label:gsub('^"(.*)"$', "%1")
+        local start_bit = tonumber(s_b) or 0
+        local end_bit = tonumber(e_b) or start_bit
+        local bit_len = end_bit - start_bit + 1
+        table.insert(fields, {
+          start_bit = start_bit,
+          end_bit = end_bit,
+          len = bit_len,
+          label = vim.trim(label),
+        })
+      end
+    end
+  end
+
+  if #fields == 0 then
+    return frame_diagram({ "(Empty packet diagram)" }, title, opts)
+  end
+
+  local out = {}
+  table.insert(out, "  Bit Offset 0                  15 16                 31")
+  table.insert(out, "  ┌" .. string.rep("─", 48) .. "┐")
+
+  for i, f in ipairs(fields) do
+    local range_str = (f.start_bit == f.end_bit) and string.format("[%d]", f.start_bit)
+      or string.format("[%d..%d]", f.start_bit, f.end_bit)
+    local desc = string.format("  │ %-10s  %-24s (%d bits) │", range_str, truncate_str(f.label, 24), f.len)
+    table.insert(out, desc)
+    if i < #fields then
+      table.insert(out, "  ├" .. string.rep("─", 48) .. "┤")
+    end
+  end
+  table.insert(out, "  └" .. string.rep("─", 48) .. "┘")
+
+  return frame_diagram(out, title, opts)
+end
+
+local function render_block(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Block Diagram (Live)"
+  local num_cols = 3
+  local blocks = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^block") then
+      -- skip
+    elseif line:match("^columns%s+(%d+)") then
+      num_cols = tonumber(line:match("^columns%s+(%d+)")) or 3
+    else
+      for item in line:gmatch("%S+") do
+        local id, lbl, span = item:match('^([%w_%-]+)%["([^"]+)"%]%:?(%d*)$')
+        if not id then
+          id, lbl, span = item:match('^([%w_%-]+)%[(.-)%]%:?(%d*)$')
+        end
+        if not id then
+          id, span = item:match('^([%w_%-]+)%:(%d+)$')
+        end
+        if not id then
+          id = item
+          lbl = item
+          span = 1
+        end
+        table.insert(blocks, {
+          id = id,
+          label = lbl or id,
+          span = tonumber(span) or 1,
+        })
+      end
+    end
+  end
+
+  if #blocks == 0 then
+    return frame_diagram({ "(Empty block diagram)" }, title, opts)
+  end
+
+  local cell_w = 16
+  local out = {}
+  local cur_row = {}
+  local used_cols = 0
+
+  local function flush_row()
+    if #cur_row == 0 then return end
+    local top_parts = { "  " }
+    local mid_parts = { "  " }
+    local bot_parts = { "  " }
+    for _, b in ipairs(cur_row) do
+      local w = b.span * cell_w + (b.span - 1) * 1 - 2
+      table.insert(top_parts, "┌" .. string.rep("─", w) .. "┐ ")
+      table.insert(mid_parts, "│" .. pad_str(truncate_str(b.label, w), w, "center") .. "│ ")
+      table.insert(bot_parts, "└" .. string.rep("─", w) .. "┘ ")
+    end
+    table.insert(out, table.concat(top_parts))
+    table.insert(out, table.concat(mid_parts))
+    table.insert(out, table.concat(bot_parts))
+    cur_row = {}
+    used_cols = 0
+  end
+
+  for _, b in ipairs(blocks) do
+    if used_cols + b.span > num_cols and used_cols > 0 then
+      flush_row()
+    end
+    table.insert(cur_row, b)
+    used_cols = used_cols + b.span
+    if used_cols >= num_cols then
+      flush_row()
+    end
+  end
+  flush_row()
+
+  return frame_diagram(out, title, opts)
+end
+
+local function render_treemap(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Treemap (Live)"
+  local items = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^treemap") then
+      -- skip
+    else
+      local indent = #(raw:match("^(%s*)") or "")
+      local name, val = line:match("^([^:]+):%s*([%d%.]+)$")
+      if name and val then
+        table.insert(items, {
+          indent = indent,
+          name = vim.trim(name),
+          value = tonumber(val) or 0,
+        })
+      elseif line ~= "" then
+        table.insert(items, {
+          indent = indent,
+          name = line,
+          value = nil,
+        })
+      end
+    end
+  end
+
+  if #items == 0 then
+    return frame_diagram({ "(Empty treemap)" }, title, opts)
+  end
+
+  local total_val = 0
+  for _, it in ipairs(items) do
+    if it.value then total_val = total_val + it.value end
+  end
+  if total_val == 0 then total_val = 100 end
+
+  local out = {}
+  local bar_w = 16
+  for _, it in ipairs(items) do
+    local prefix = string.rep("  ", math.max(0, math.floor(it.indent / 2))) .. "• "
+    if it.value then
+      local pct = math.floor((it.value / total_val) * 100 + 0.5)
+      local filled = math.max(1, math.min(bar_w, math.floor((it.value / total_val) * bar_w + 0.5)))
+      local bar = string.rep("█", filled) .. string.rep("░", bar_w - filled)
+      table.insert(out, string.format("  %-20s [%s] %3d%% (%s)", prefix .. truncate_str(it.name, 16), bar, pct, tostring(it.value)))
+    else
+      table.insert(out, string.format("  %-20s", prefix .. it.name))
+    end
+  end
+
+  return frame_diagram(out, title, opts)
+end
+
+local function render_sankey(code, opts)
+  opts = opts or {}
+  local title = "󰡷 Mermaid Sankey Flow (Live)"
+  local flows = {}
+
+  for _, raw in ipairs(vim.split(code, "\n")) do
+    local line = vim.trim(raw)
+    if line == "" or line:match("^%%") or line:match("^sankey") then
+      -- skip
+    else
+      local parts = vim.split(line, ",")
+      if #parts >= 3 then
+        local src = vim.trim(parts[1])
+        local dst = vim.trim(parts[2])
+        local val = tonumber(vim.trim(parts[3])) or 0
+        table.insert(flows, { src = src, dst = dst, val = val })
+      end
+    end
+  end
+
+  if #flows == 0 then
+    return frame_diagram({ "(Empty sankey flow)" }, title, opts)
+  end
+
+  local out = {}
+  for _, f in ipairs(flows) do
+    local edge_str = string.format(" ──[ %s ]──▶ ", tostring(f.val))
+    table.insert(out, string.format("  %-16s%s%-16s", truncate_str(f.src, 16), edge_str, truncate_str(f.dst, 16)))
+  end
+
   return frame_diagram(out, title, opts)
 end
 
@@ -2482,8 +2972,18 @@ function M.tokenize_line(line)
         end
       end
       table.insert(chunks, { line:sub(s, i - 1), "SuperMarkdownMermaidBox" })
-    elseif b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼" or b3 == "●" or b3 == "◉" or b3 == "⟲" or b3 == "╌" then
-      table.insert(chunks, { b3, "SuperMarkdownMermaidArrow" })
+    elseif
+      b3 == "▶" or b3 == "◀" or b3 == "▲" or b3 == "▼" or b3 == "●" or b3 == "◉" or b3 == "⟲" or b3 == "╌"
+      or b3 == "►" or b3 == "★" or b3 == "☆" or b3 == "▪" or b3 == "▫"
+      or b3 == "█" or b3 == "░" or b3 == "▒" or b3 == "▓"
+    then
+      local hl = "SuperMarkdownMermaidArrow"
+      if b3 == "█" or b3 == "░" or b3 == "▒" or b3 == "▓" then
+        hl = "SuperMarkdownMermaidBox"
+      elseif b3 == "☆" then
+        hl = "SuperMarkdownMermaidEdgeLabel"
+      end
+      table.insert(chunks, { b3, hl })
       i = i + 3
     else
       local ch = line:sub(i, i)
@@ -2509,6 +3009,8 @@ function M.tokenize_line(line)
             or nb3 == "╔" or nb3 == "═" or nb3 == "╗" or nb3 == "║" or nb3 == "╚" or nb3 == "╝"
             or nb3 == "◇" or nb3 == "╱" or nb3 == "╲" or nb3 == "┈" or nb3 == "┄"
             or nb3 == "▶" or nb3 == "◀" or nb3 == "▲" or nb3 == "▼" or nb3 == "●" or nb3 == "◉" or nb3 == "⟲" or nb3 == "╌"
+            or nb3 == "►" or nb3 == "★" or nb3 == "☆" or nb3 == "▪" or nb3 == "▫"
+            or nb3 == "█" or nb3 == "░" or nb3 == "▒" or nb3 == "▓"
             or nch == "["
           then
             break
@@ -2546,10 +3048,24 @@ function M.render(mermaid_code, opts)
     return render_mindmap(trimmed, opts)
   elseif trimmed:match("^gitGraph") then
     return render_gitgraph(trimmed, opts)
-  elseif trimmed:match("^timeline") or trimmed:match("^journey") then
+  elseif trimmed:match("^journey") then
+    return render_journey(trimmed, opts)
+  elseif trimmed:match("^timeline") then
     return render_timeline(trimmed, opts)
   elseif trimmed:match("^xychart") then
     return render_xychart(trimmed, opts)
+  elseif trimmed:match("^kanban") then
+    return render_kanban(trimmed, opts)
+  elseif trimmed:match("^quadrantChart") then
+    return render_quadrant(trimmed, opts)
+  elseif trimmed:match("^packet") then
+    return render_packet(trimmed, opts)
+  elseif trimmed:match("^block") then
+    return render_block(trimmed, opts)
+  elseif trimmed:match("^treemap") then
+    return render_treemap(trimmed, opts)
+  elseif trimmed:match("^sankey") then
+    return render_sankey(trimmed, opts)
   else
     return render_flowchart(trimmed, opts)
   end

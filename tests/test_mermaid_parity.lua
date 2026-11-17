@@ -236,6 +236,85 @@ local ok_opt, res_opt = termaid.render(test_sample, {
 })
 check(ok_opt and #res_opt.text_lines > 0, "Custom padding_x, padding_y, gap, and width accepted cleanly")
 
+-- 7. Test Inbuilt Native Engine Fidelity & Dedicated Diagram Renderers
+print("\n--- 7. Inbuilt Native Pure-Lua Engine Fidelity Verification ---")
+
+-- 7.1 Kanban
+local kanban_out = ascii.render([[kanban
+  Backlog
+    [Task 1]
+  In Progress
+    [Task 2]
+  Done
+    [Task 3]
+]], { max_width = 80 })
+local kanban_str = table.concat(kanban_out, "\n")
+check(kanban_str:find("Backlog %(1%)") ~= nil and kanban_str:find("In Progress %(1%)") ~= nil and kanban_str:find("Done %(1%)") ~= nil, "Inbuilt Kanban produces formatted multi-column board with card counts")
+check(kanban_str:find("Task 1") ~= nil and kanban_str:find("Task 2") ~= nil, "Inbuilt Kanban retains individual task labels")
+
+-- 7.2 Quadrant Chart
+local quad_out = ascii.render([[quadrantChart
+  title Parity Matrix
+  x-axis Low Effort --> High Effort
+  y-axis Low Value --> High Value
+  quadrant-1 Quick Wins
+  quadrant-2 Major Projects
+  quadrant-3 Fill-ins
+  quadrant-4 Thankless Tasks
+  Optimizer: [0.8, 0.9]
+  Bugfix: [0.2, 0.4]
+]], { max_width = 80 })
+local quad_str = table.concat(quad_out, "\n")
+check(quad_str:find("Q1: Quick Wins") ~= nil and quad_str:find("Q2: Major Projects") ~= nil, "Inbuilt Quadrant renders 2x2 labeled matrix")
+check(quad_str:find("Optimizer") ~= nil and quad_str:find("Bugfix") ~= nil, "Inbuilt Quadrant maps data points to corresponding quadrants")
+
+-- 7.3 Packet Diagram
+local packet_out = ascii.render([[packet-beta
+  0-15: "Source Port"
+  16-31: "Destination Port"
+  32-63: "Sequence Number"
+]], { max_width = 80 })
+local packet_str = table.concat(packet_out, "\n")
+check(packet_str:find("%[0%.%.15%]") ~= nil and packet_str:find("Source Port") ~= nil, "Inbuilt Packet renders RFC-style bit offset headers and field boxes")
+check(packet_str:find("%(16 bits%)") ~= nil or packet_str:find("%(32 bits%)") ~= nil, "Inbuilt Packet calculates and displays bit lengths")
+
+-- 7.4 User Journey
+local journey_out = ascii.render([[journey
+  title Developer Onboarding
+  section Setup
+    Install Neovim: 5: Dev
+    Configure Plugins: 4: Dev
+]], { max_width = 80 })
+local journey_str = table.concat(journey_out, "\n")
+check(journey_str:find("★★★★★ %(5/5%)") ~= nil, "Inbuilt User Journey displays visual satisfaction stars")
+check(journey_str:find("%[Dev%]") ~= nil, "Inbuilt User Journey displays actor badges")
+
+-- 7.5 Treemap
+local treemap_out = ascii.render([[treemap
+  Disk
+    Code: 70
+    Data: 30
+]], { max_width = 80 })
+local treemap_str = table.concat(treemap_out, "\n")
+check(treemap_str:find("70%%") ~= nil and treemap_str:find("30%%") ~= nil, "Inbuilt Treemap calculates percentages")
+check(treemap_str:find("█") ~= nil, "Inbuilt Treemap renders proportional visual bar meters")
+
+-- 7.6 Sankey
+local sankey_out = ascii.render([[sankey-beta
+  ServiceA,ServiceB,100
+  ServiceB,Database,80
+]], { max_width = 80 })
+local sankey_str = table.concat(sankey_out, "\n")
+check(sankey_str:find("ServiceA") ~= nil and sankey_str:find("──%[ 100 %]──▶") ~= nil, "Inbuilt Sankey displays directed weighted flows")
+
+-- 7.7 Block Diagram
+local block_out = ascii.render([[block-beta
+  columns 3
+  A["Input"] B["Compute"] C["Output"]
+]], { max_width = 80 })
+local block_str = table.concat(block_out, "\n")
+check(block_str:find("Input") ~= nil and block_str:find("Compute") ~= nil and block_str:find("Output") ~= nil, "Inbuilt Block diagram renders structured block units")
+
 print(string.format("\n=================================================================="))
 print(string.format("   Parity Suite Complete: %d Passed, %d Failed (Total: %d)", passed, failed, passed + failed))
 print(string.format("=================================================================="))
