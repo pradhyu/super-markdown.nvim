@@ -244,3 +244,49 @@ super-markdown.nvim/
 
 ## 5. Summary
 `super-markdown.nvim` delivers an uncompromising, modern markdown environment for Neovim: combining native terminal graphics, in-buffer visual elegance, and lightning-fast search navigation into a cohesive, robust package.
+
+---
+
+## 6. System Requirements & Implementation Traceability
+
+### 6.1 Core Functional Requirements
+
+**REQ-01**: In-Buffer Visual Extmark Rendering
+High-fidelity rendering of headings, checkboxes, callouts, and tables directly inside the active buffer.
+- @impl: lua/super-markdown/render/init.lua:1
+- @test: tests/run_all.lua:130
+
+**REQ-02**: Terminal Mermaid Compilation & Preview
+Dual-engine Mermaid rendering with Termaid styled extmarks and pure-Lua fallback.
+- @impl: lua/super-markdown/mermaid/init.lua:1
+- @test: tests/test_mermaid_parity.lua:1
+
+**REQ-03**: Interactive Human Spec Review Cockpit
+Floating step-by-step HUD stepper walking through sections with git diffs, review badges, and single-key approvals.
+- @impl: lua/super-markdown/spec/review_session.lua:1
+- @test: tests/test_spec_review_suite.lua:170
+
+**REQ-04**: Domain Entity & Contract Invariant Validator
+Cross-section invariant checker verifying endpoint consistency, database tables, and environment variables.
+- @impl: lua/super-markdown/spec/invariants.lua:1
+- @test: tests/test_spec_review_suite.lua:90
+
+**REQ-05**: Bidirectional Traceability Matrix
+Real-time coverage matrix mapping requirements and acceptance criteria to repository code and test files.
+- @impl: lua/super-markdown/spec/traceability.lua:1
+- @test: tests/test_spec_review_suite.lua:140
+
+### 6.2 Review Audit Directives
+
+- [x] Integrate full pure-Lua Termaid parser
+- [x] Implement AST-aware heading folding
+- [ ] Implement live LSP hover for spec cross-references
+- [?] Should spec invariant validation trigger automatically on buffer save?
+- [!] Ensure background git diff subcommands never block the UI thread during editing
+
+### 6.3 Environment & System Invariants
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SUPER_MARKDOWN_RENDERER` | Override active diagram renderer (`auto`, `termaid`, `internal`) | `auto` |
+| `SUPER_MARKDOWN_CACHE_DIR` | Filesystem cache root for compiled diagrams | `~/.cache` |
