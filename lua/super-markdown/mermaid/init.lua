@@ -37,6 +37,20 @@ function M.set_renderer(name)
   local active = M.get_active_renderer()
   vim.notify(string.format("SuperMarkdown: Mermaid renderer set to '%s' (active: %s) 󰡷", name, active), vim.log.levels.INFO)
   M.render_status()
+  local pp = package.loaded["super-markdown.preview_pane"]
+  if pp and pp.is_open and pp.is_open() then
+    pp.refresh()
+  end
+end
+
+function M.toggle_renderer()
+  local active = M.get_active_renderer()
+  local next_renderer = (active == "termaid") and "internal" or "termaid"
+  if next_renderer == "termaid" and not termaid.is_available() then
+    vim.notify("SuperMarkdown: 'termaid' CLI is not found in PATH or installed. Run `pip install termaid` to use termaid.", vim.log.levels.WARN)
+    return
+  end
+  M.set_renderer(next_renderer)
 end
 
 function M.get_namespace()

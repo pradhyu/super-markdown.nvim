@@ -173,6 +173,7 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.toc, M.toc, "Table of Contents (Picker)")
   bmap("n", km.toc_sidebar, M.toc_sidebar, "Table of Contents (Sidebar)")
   bmap("n", km.mermaid_preview, M.mermaid_preview, "Mermaid Diagram Preview")
+  bmap("n", km.toggle_mermaid_renderer, M.toggle_mermaid_renderer, "Toggle Mermaid Renderer (Termaid / Internal)")
   bmap("n", km.toggle_checkbox, M.checkbox_toggle, "Toggle Checkbox")
   bmap("n", km.format_table, M.table_format, "Format Markdown Table")
   bmap("n", km.follow_link, M.follow_link, "Follow Markdown Link")
@@ -320,6 +321,7 @@ M.toc = toc_picker.open
 M.toc_sidebar = toc_sidebar.toggle
 M.toc_sidebar_pos = toc_sidebar.set_position
 M.mermaid_preview = mermaid.preview_under_cursor
+M.toggle_mermaid_renderer = mermaid.toggle_renderer
 M.set_mermaid_renderer = mermaid.set_renderer
 M.get_mermaid_renderer = mermaid.get_active_renderer
 M.checkbox_toggle = checkbox.toggle

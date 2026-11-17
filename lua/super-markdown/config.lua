@@ -284,6 +284,7 @@ M.defaults = {
     toc = "<leader>mo",
     toc_sidebar = "<leader>ms",
     mermaid_preview = "<leader>mp",
+    toggle_mermaid_renderer = "<leader>mm",
     toggle_checkbox = "<leader>mx",
     format_table = "<leader>mtf",
     follow_link = "<leader>ml",

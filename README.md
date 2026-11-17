@@ -269,6 +269,7 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `<leader>mo` | `:SuperMarkdown toc` | Open Table of Contents (Telescope / Picker) |
 | Normal | `<leader>ms` | `:SuperMarkdown toc_sidebar` | Toggle TOC outline sidebar |
 | Normal | `<leader>mp` | `:SuperMarkdown mermaid` | Preview Mermaid diagram under cursor |
+| Normal | `<leader>mm` | `:SuperMarkdown mermaid_toggle` | Toggle Mermaid renderer on the fly (Termaid ↔ Internal) |
 | Normal | — | `:SuperMarkdown mermaid_renderer [auto\|termaid\|internal]` | Switch Mermaid text renderer engine |
 | Normal | `<leader>mx` | `:SuperMarkdown checkbox` | Toggle / cycle checkbox state |
 | Normal | `<leader>mtf`| `:SuperMarkdown table_format`| Auto-format & align Markdown table |
@@ -421,6 +422,7 @@ require("super-markdown").setup({
     toc = "<leader>mo",
     toc_sidebar = "<leader>ms",
     mermaid_preview = "<leader>mp",
+    toggle_mermaid_renderer = "<leader>mm",
     toggle_checkbox = "<leader>mx",
     format_table = "<leader>mtf",
     follow_link = "<leader>ml",
