@@ -192,6 +192,22 @@ function M.setup()
   set_hl("SuperMarkdownReviewApproved", { fg = str_fg, bold = true })
   set_hl("SuperMarkdownReviewRejected", { fg = spec_fg, bold = true })
   set_hl("SuperMarkdownReviewQuestion", { fg = kw_fg, bold = true })
+
+  -- Review Cockpit & Floating UI Elements
+  set_hl("SuperMarkdownReviewTitle", { fg = fn_fg, bold = true })
+  set_hl("SuperMarkdownReviewLabel", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownReviewSectionTitle", { fg = normal_fg, bold = true })
+  set_hl("SuperMarkdownReviewClean", { fg = str_fg })
+  set_hl("SuperMarkdownReviewHazard", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyApprove", { fg = str_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyReject", { fg = spec_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyQuestion", { fg = kw_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyComment", { fg = id_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyNav", { fg = const_fg, bold = true })
+  set_hl("SuperMarkdownReviewKeyExport", { fg = type_fg, bold = true })
+  set_hl("SuperMarkdownReviewDiffAdd", { fg = str_fg, bold = true })
+  set_hl("SuperMarkdownReviewDiffMod", { fg = const_fg, bold = true })
+  set_hl("SuperMarkdownReviewDiffDel", { fg = spec_fg, bold = true })
 end
 
 -- Auto-update highlights on colorscheme switch

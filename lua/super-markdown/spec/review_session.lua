@@ -33,10 +33,10 @@ local function render_cockpit()
   local status_hl = "SuperMarkdownMermaidWait"
   if sec.review_status == "APPROVED" then
     status_str = "󰄵 APPROVED"
-    status_hl = "SuperMarkdownCheckboxChecked"
+    status_hl = "SuperMarkdownReviewApproved"
   elseif sec.review_status == "REJECTED" then
     status_str = "󰀦 REVISION REQUESTED"
-    status_hl = "SuperMarkdownCalloutCaution"
+    status_hl = "SuperMarkdownReviewRejected"
   end
 
   local c = sec.counts or {}
@@ -91,9 +91,91 @@ local function render_cockpit()
     end)
   end
 
-  pcall(vim.api.nvim_buf_add_highlight, session_buf, -1, status_hl, 0, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, session_buf, -1, "SuperMarkdownDivider", 1, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, session_buf, -1, "SuperMarkdownDivider", 5, 0, -1)
+  -- Rich tokenized syntax highlighting for the Review Cockpit HUD
+  local ns_id = vim.api.nvim_create_namespace("super_markdown_cockpit_hl")
+  vim.api.nvim_buf_clear_namespace(session_buf, ns_id, 0, -1)
+
+  local function add_hl(line_idx, start_col, end_col, hl)
+    pcall(vim.api.nvim_buf_add_highlight, session_buf, ns_id, hl, line_idx, start_col, end_col)
+  end
+
+  local function hl_pattern(line_idx, pattern, hl)
+    local line_str = lines[line_idx + 1] or ""
+    local s, e = line_str:find(pattern)
+    while s do
+      add_hl(line_idx, s - 1, e, hl)
+      s, e = line_str:find(pattern, e + 1)
+    end
+  end
+
+  -- Line 0: Title banner & status badge
+  local line0 = lines[1]
+  local title_prefix = string.format(" 󰡷 Spec Review Cockpit [%d/%d]", cur_sec_idx, #sections_cache)
+  add_hl(0, 0, #title_prefix, "SuperMarkdownReviewTitle")
+  local sep_s, sep_e = line0:find("—")
+  if sep_s then
+    add_hl(0, sep_s - 1, sep_e, "SuperMarkdownDivider")
+    add_hl(0, sep_e + 1, -1, status_hl)
+  end
+
+  -- Line 1: Top divider
+  add_hl(1, 0, -1, "SuperMarkdownDivider")
+
+  -- Line 2: Section title & line target
+  add_hl(2, 0, 9, "SuperMarkdownReviewLabel")
+  local lnum_s, lnum_e = lines[3]:find("%(Line %d+%)")
+  if lnum_s then
+    add_hl(2, 10, lnum_s - 2, "SuperMarkdownReviewSectionTitle")
+    add_hl(2, lnum_s - 1, lnum_e, "Comment")
+  else
+    add_hl(2, 10, -1, "SuperMarkdownReviewSectionTitle")
+  end
+
+  -- Line 3: Metrics, Tasks & Diff indicators
+  add_hl(3, 0, 9, "SuperMarkdownReviewLabel")
+  hl_pattern(3, "%d+/%d+%s+tasks", "SuperMarkdownCheckboxProgress")
+  hl_pattern(3, "%d+%s+questions%s+%[%?%]", "SuperMarkdownCalloutQuestion")
+  hl_pattern(3, "%d+%s+blockers%s+%[!%]", "SuperMarkdownCalloutCaution")
+  hl_pattern(3, "󰌾%s+Security/DB%s+Hazards", "SuperMarkdownRiskHigh")
+  hl_pattern(3, "•", "SuperMarkdownDivider")
+  hl_pattern(3, "git:", "Comment")
+  hl_pattern(3, "%+%d+", "SuperMarkdownReviewDiffAdd")
+  hl_pattern(3, "~%d+", "SuperMarkdownReviewDiffMod")
+  hl_pattern(3, "%-%d+", "SuperMarkdownReviewDiffDel")
+  hl_pattern(3, "diff:%s+none", "Comment")
+
+  -- Line 4: Findings
+  add_hl(4, 0, 10, "SuperMarkdownReviewLabel")
+  if #findings > 0 then
+    if sec.has_hazards or (c.important and c.important > 0) then
+      add_hl(4, 10, -1, "SuperMarkdownReviewHazard")
+    else
+      add_hl(4, 10, -1, "SuperMarkdownCalloutQuestion")
+    end
+  else
+    add_hl(4, 10, -1, "SuperMarkdownReviewClean")
+  end
+
+  -- Line 5: Bottom divider
+  add_hl(5, 0, -1, "SuperMarkdownDivider")
+
+  -- Line 6: Keymap actions row 1
+  hl_pattern(6, "%[a%]", "SuperMarkdownReviewKeyApprove")
+  hl_pattern(6, "Approve", "SuperMarkdownReviewApproved")
+  hl_pattern(6, "%[r%]", "SuperMarkdownReviewKeyReject")
+  hl_pattern(6, "Request Changes", "SuperMarkdownReviewRejected")
+  hl_pattern(6, "%[q%]", "SuperMarkdownReviewKeyQuestion")
+  hl_pattern(6, "Ask Agent", "SuperMarkdownReviewQuestion")
+  hl_pattern(6, "%[c%]", "SuperMarkdownReviewKeyComment")
+  hl_pattern(6, "Comment", "SuperMarkdownCalloutInfo")
+  hl_pattern(6, "%[x%]", "SuperMarkdownReviewKeyExport")
+  hl_pattern(6, "Export", "SuperMarkdownSpecBadgeImpl")
+
+  -- Line 7: Navigation keymaps row 2
+  hl_pattern(7, "%[n/j%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(7, "%[p/k%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(7, "%[o%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(7, "%[Esc%]", "Comment")
 end
 
 local function reload_sections()
@@ -153,6 +235,7 @@ function M.start(bufnr)
   })
 
   pcall(vim.api.nvim_set_option_value, "cursorline", false, { win = session_win })
+  pcall(vim.api.nvim_set_option_value, "winhighlight", "Normal:NormalFloat,FloatBorder:SuperMarkdownReviewTitle", { win = session_win })
 
   local function close_session()
     if session_win and vim.api.nvim_win_is_valid(session_win) then

@@ -203,9 +203,72 @@ function M.open(bufnr)
   })
 
   pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = float_win })
-  pcall(vim.api.nvim_buf_add_highlight, float_buf, -1, "SuperMarkdownH2", 0, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, float_buf, -1, "SuperMarkdownDivider", 1, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, float_buf, -1, "SuperMarkdownDivider", 3, 0, -1)
+  pcall(vim.api.nvim_set_option_value, "winhighlight", "Normal:NormalFloat,FloatBorder:SuperMarkdownReviewKeyNav", { win = float_win })
+
+  -- Rich color coding for Traceability Matrix
+  local ns_id = vim.api.nvim_create_namespace("super_markdown_traceability_hl")
+  vim.api.nvim_buf_clear_namespace(float_buf, ns_id, 0, -1)
+
+  local function add_hl(line_idx, start_col, end_col, hl)
+    pcall(vim.api.nvim_buf_add_highlight, float_buf, ns_id, hl, line_idx, start_col, end_col)
+  end
+
+  local function hl_pattern(line_idx, pattern, hl)
+    local line_str = lines[line_idx + 1] or ""
+    local s, e = line_str:find(pattern)
+    while s do
+      add_hl(line_idx, s - 1, e, hl)
+      s, e = line_str:find(pattern, e + 1)
+    end
+  end
+
+  add_hl(0, 0, -1, "SuperMarkdownReviewTitle")
+  add_hl(1, 0, -1, "SuperMarkdownDivider")
+
+  -- Line 2: Stats
+  add_hl(2, 0, 20, "SuperMarkdownReviewLabel")
+  hl_pattern(2, "Implemented:%s+%d+/%d+%s+%(%d+%%%s*%)", imp_pct == 100 and "SuperMarkdownReviewApproved" or "SuperMarkdownReviewDiffMod")
+  hl_pattern(2, "Tested:%s+%d+/%d+%s+%(%d+%%%s*%)", tst_pct == 100 and "SuperMarkdownReviewApproved" or "SuperMarkdownReviewDiffMod")
+  hl_pattern(2, "•", "SuperMarkdownDivider")
+
+  add_hl(3, 0, -1, "SuperMarkdownDivider")
+
+  for i, line in ipairs(lines) do
+    local l_idx = i - 1
+    if line:find("^%s*%[●%]") then
+      hl_pattern(l_idx, "%[●%]", "SuperMarkdownReviewApproved")
+      hl_pattern(l_idx, "%f[%a][A-Z]+%-%d+%f[%A]", "SuperMarkdownSpecReqId")
+      hl_pattern(l_idx, "%(line %d+%)", "Comment")
+    elseif line:find("^%s*%[◐%]") then
+      hl_pattern(l_idx, "%[◐%]", "SuperMarkdownReviewDiffMod")
+      hl_pattern(l_idx, "%f[%a][A-Z]+%-%d+%f[%A]", "SuperMarkdownSpecReqId")
+      hl_pattern(l_idx, "%(line %d+%)", "Comment")
+    elseif line:find("^%s*%[○%]") then
+      hl_pattern(l_idx, "%[○%]", "Comment")
+      hl_pattern(l_idx, "%f[%a][A-Z]+%-%d+%f[%A]", "SuperMarkdownSpecReqId")
+      hl_pattern(l_idx, "%(line %d+%)", "Comment")
+    end
+
+    if line:find("@impl:") then
+      hl_pattern(l_idx, "├──", "SuperMarkdownDivider")
+      hl_pattern(l_idx, "@impl:", "SuperMarkdownSpecBadgeImpl")
+      hl_pattern(l_idx, "%[✓%]", "SuperMarkdownReviewApproved")
+      hl_pattern(l_idx, "%[UNIMPLEMENTED 󰀦%]", "SuperMarkdownReviewRejected")
+      hl_pattern(l_idx, "%[󰀦 MISSING%]", "SuperMarkdownReviewRejected")
+    elseif line:find("@test:") then
+      hl_pattern(l_idx, "└──", "SuperMarkdownDivider")
+      hl_pattern(l_idx, "@test:", "SuperMarkdownSpecBadgeTest")
+      hl_pattern(l_idx, "%[✓%]", "SuperMarkdownReviewApproved")
+      hl_pattern(l_idx, "%[UNTESTED 󰀦%]", "SuperMarkdownReviewRejected")
+      hl_pattern(l_idx, "%[󰀦 MISSING%]", "SuperMarkdownReviewRejected")
+    end
+  end
+
+  -- Bottom divider and footer
+  add_hl(#lines - 2, 0, -1, "SuperMarkdownDivider")
+  hl_pattern(#lines - 1, "%[Enter%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[r%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[q / <Esc>%]", "Comment")
 
   local function close_matrix()
     M.close()

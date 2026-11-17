@@ -252,10 +252,56 @@ function M.open(bufnr)
   })
 
   pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = float_win })
+  pcall(vim.api.nvim_set_option_value, "winhighlight", "Normal:NormalFloat,FloatBorder:SuperMarkdownReviewKeyReject", { win = float_win })
 
-  -- Highlight header
-  pcall(vim.api.nvim_buf_add_highlight, float_buf, -1, "SuperMarkdownH2", 0, 0, -1)
-  pcall(vim.api.nvim_buf_add_highlight, float_buf, -1, "SuperMarkdownDivider", 1, 0, -1)
+  -- Rich color coding for Invariant Validator Report
+  local ns_id = vim.api.nvim_create_namespace("super_markdown_invariants_hl")
+  vim.api.nvim_buf_clear_namespace(float_buf, ns_id, 0, -1)
+
+  local function add_hl(line_idx, start_col, end_col, hl)
+    pcall(vim.api.nvim_buf_add_highlight, float_buf, ns_id, hl, line_idx, start_col, end_col)
+  end
+
+  local function hl_pattern(line_idx, pattern, hl)
+    local line_str = lines[line_idx + 1] or ""
+    local s, e = line_str:find(pattern)
+    while s do
+      add_hl(line_idx, s - 1, e, hl)
+      s, e = line_str:find(pattern, e + 1)
+    end
+  end
+
+  add_hl(0, 0, -1, "SuperMarkdownReviewTitle")
+  add_hl(1, 0, -1, "SuperMarkdownDivider")
+
+  for i, line in ipairs(lines) do
+    local l_idx = i - 1
+    if line:find("All domain invariants and entity references passed") then
+      hl_pattern(l_idx, "󰄵", "SuperMarkdownReviewApproved")
+      add_hl(l_idx, 0, -1, "SuperMarkdownReviewClean")
+    elseif line:find("Found %d+ Potential Invariant") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownReviewHazard")
+    elseif line:find("^%s*󰀦") then
+      hl_pattern(l_idx, "󰀦", "SuperMarkdownRiskHigh")
+      hl_pattern(l_idx, "%[[^%]]+%]", "SuperMarkdownCalloutWarning")
+      hl_pattern(l_idx, "line %d+", "SuperMarkdownInlineCode")
+    elseif line:find("^%s*󰋽") then
+      hl_pattern(l_idx, "󰋽", "SuperMarkdownCalloutQuestion")
+      hl_pattern(l_idx, "%[[^%]]+%]", "SuperMarkdownCalloutNote")
+      hl_pattern(l_idx, "line %d+", "SuperMarkdownInlineCode")
+    elseif line:find("Verified Invariant Checks:") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownReviewLabel")
+    elseif line:find("• 󰄵") then
+      hl_pattern(l_idx, "•", "SuperMarkdownDivider")
+      hl_pattern(l_idx, "󰄵", "SuperMarkdownReviewApproved")
+    end
+  end
+
+  -- Bottom divider and footer
+  add_hl(#lines - 2, 0, -1, "SuperMarkdownDivider")
+  hl_pattern(#lines - 1, "%[Enter%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[r%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[q / <Esc>%]", "Comment")
 
   local function close_report()
     M.close()
