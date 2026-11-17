@@ -411,6 +411,84 @@ function M.open_diff_dashboard(bufnr)
     title_pos = "center",
   })
 
+  pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = dash_win })
+  pcall(vim.api.nvim_set_option_value, "winhighlight", "Normal:NormalFloat,FloatBorder:SuperMarkdownReviewDiffMod", { win = dash_win })
+
+  -- Rich color coding for Diff Eyeballer Dashboard
+  local ns_id = vim.api.nvim_create_namespace("super_markdown_diff_dash_hl")
+  vim.api.nvim_buf_clear_namespace(dash_buf, ns_id, 0, -1)
+
+  local function add_hl(line_idx, start_col, end_col, hl)
+    pcall(vim.api.nvim_buf_add_highlight, dash_buf, ns_id, hl, line_idx, start_col, end_col)
+  end
+
+  local function hl_pattern(line_idx, pattern, hl)
+    local line_str = lines[line_idx + 1] or ""
+    local s, e = line_str:find(pattern)
+    while s do
+      add_hl(line_idx, s - 1, e, hl)
+      s, e = line_str:find(pattern, e + 1)
+    end
+  end
+
+  -- Line 0: Header banner
+  add_hl(0, 0, -1, "SuperMarkdownReviewTitle")
+  add_hl(1, 0, -1, "SuperMarkdownDivider")
+
+  -- Line 2: Document label
+  add_hl(2, 0, 14, "SuperMarkdownReviewLabel")
+  add_hl(2, 14, -1, "SuperMarkdownReviewSectionTitle")
+
+  -- Line 3: Changes vs HEAD stats
+  add_hl(3, 0, 20, "SuperMarkdownReviewLabel")
+  hl_pattern(3, "%+%d+%s+Added", "SuperMarkdownReviewDiffAdd")
+  hl_pattern(3, "~%d+%s+Modified", "SuperMarkdownReviewDiffMod")
+  hl_pattern(3, "%-%d+%s+Deleted", "SuperMarkdownReviewDiffDel")
+  hl_pattern(3, "·", "SuperMarkdownDivider")
+
+  add_hl(4, 0, -1, "SuperMarkdownDivider")
+
+  for i, line in ipairs(lines) do
+    local l_idx = i - 1
+    if line:find("^%s*## Sections Touched") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownH2")
+    elseif line:find("^%s*## Detailed Change Hunks") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownH2")
+    elseif line:find("^%s*▶") then
+      hl_pattern(l_idx, "▶", "SuperMarkdownReviewKeyNav")
+      hl_pattern(l_idx, "%+%d+", "SuperMarkdownReviewDiffAdd")
+      hl_pattern(l_idx, "~%d+", "SuperMarkdownReviewDiffMod")
+      hl_pattern(l_idx, "%-%d+", "SuperMarkdownReviewDiffDel")
+      hl_pattern(l_idx, "%(Line %d+%)", "Comment")
+    elseif line:find("^%s*%[%d+%]%s+󰐕%s+Added") then
+      hl_pattern(l_idx, "%[%d+%]", "SuperMarkdownReviewKeyNav")
+      hl_pattern(l_idx, "󰐕%s+Added", "SuperMarkdownReviewDiffAdd")
+      hl_pattern(l_idx, "at Line %d+", "SuperMarkdownInlineCode")
+      hl_pattern(l_idx, "%(new:%d+, old:%d+%)", "Comment")
+    elseif line:find("^%s*%[%d+%]%s+󰜥%s+Modified") then
+      hl_pattern(l_idx, "%[%d+%]", "SuperMarkdownReviewKeyNav")
+      hl_pattern(l_idx, "󰜥%s+Modified", "SuperMarkdownReviewDiffMod")
+      hl_pattern(l_idx, "at Line %d+", "SuperMarkdownInlineCode")
+      hl_pattern(l_idx, "%(new:%d+, old:%d+%)", "Comment")
+    elseif line:find("^%s*%[%d+%]%s+󰍴%s+Deleted") then
+      hl_pattern(l_idx, "%[%d+%]", "SuperMarkdownReviewKeyNav")
+      hl_pattern(l_idx, "󰍴%s+Deleted", "SuperMarkdownReviewDiffDel")
+      hl_pattern(l_idx, "at Line %d+", "SuperMarkdownInlineCode")
+      hl_pattern(l_idx, "%(new:%d+, old:%d+%)", "Comment")
+    elseif line:find("^%s*%+") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownReviewDiffAdd")
+    elseif line:find("^%s*%-") then
+      add_hl(l_idx, 0, -1, "SuperMarkdownReviewDiffDel")
+    end
+  end
+
+  -- Bottom divider and footer
+  add_hl(#lines - 2, 0, -1, "SuperMarkdownDivider")
+  hl_pattern(#lines - 1, "%[q/Esc%]", "Comment")
+  hl_pattern(#lines - 1, "%[<CR>%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[r%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "·", "SuperMarkdownDivider")
+
   -- Keybindings
   local opts = { buffer = dash_buf, silent = true, nowait = true }
   vim.keymap.set("n", "q", function()

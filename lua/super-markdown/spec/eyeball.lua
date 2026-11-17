@@ -158,35 +158,99 @@ function M.open(bufnr)
     title_pos = "center",
   })
 
+  pcall(vim.api.nvim_set_option_value, "cursorline", true, { win = hud_win })
+  pcall(vim.api.nvim_set_option_value, "winhighlight", "Normal:NormalFloat,FloatBorder:SuperMarkdownReviewTitle", { win = hud_win })
+
+  local function add_hl(line_idx, start_col, end_col, hl)
+    pcall(vim.api.nvim_buf_add_highlight, hud_buf, NS_EYEBALL, hl, line_idx, start_col, end_col)
+  end
+
+  local function hl_pattern(line_idx, pattern, hl)
+    local line_str = lines[line_idx + 1] or ""
+    local s, e = line_str:find(pattern)
+    while s do
+      add_hl(line_idx, s - 1, e, hl)
+      s, e = line_str:find(pattern, e + 1)
+    end
+  end
+
   -- Apply syntax highlights inside HUD
+  add_hl(0, 0, -1, "SuperMarkdownReviewTitle")
+  add_hl(1, 0, -1, "SuperMarkdownDivider")
+
+  -- Labels on top metadata
+  add_hl(2, 0, 8, "SuperMarkdownReviewLabel")
+  add_hl(3, 0, 10, "SuperMarkdownReviewLabel")
+  add_hl(4, 0, 10, "SuperMarkdownReviewLabel")
+  add_hl(5, 0, 12, "SuperMarkdownReviewLabel")
+  add_hl(6, 0, 10, "SuperMarkdownReviewLabel")
+
+  -- Status & Readiness
+  hl_pattern(3, "%[%a+[^%]]*%]", "SuperMarkdownSpecReqId")
+  hl_pattern(3, "Readiness:%s+%d+/100", "SuperMarkdownReviewApproved")
+
+  -- Progress bar
+  hl_pattern(5, "Progress:%s+.*", "SuperMarkdownReviewApproved")
+
+  -- Radar icons & counts
+  hl_pattern(6, "󰄵%s+%d+%s+Done", "SuperMarkdownReviewApproved")
+  hl_pattern(6, "󰄱%s+%d+%s+Todo", "Comment")
+  hl_pattern(6, "󰀦%s+%d+%s+Blockers", "SuperMarkdownCalloutCaution")
+  hl_pattern(6, "󰳦%s+%d+%s+Risks", "SuperMarkdownRiskHigh")
+  hl_pattern(6, "󰋽%s+%d+%s+Questions", "SuperMarkdownCalloutQuestion")
+  hl_pattern(6, "󰚩%s+%d+%s+Fluff", "SuperMarkdownSpecBadgeImpl")
+  hl_pattern(6, "│", "SuperMarkdownDivider")
+
+  add_hl(7, 0, -1, "SuperMarkdownDivider")
+
   for idx, l in ipairs(lines) do
     local lnum = idx - 1
-    if l:match("%[󰄵 APPROVED") then
+    if l:match("^%s*## Section Review Matrix") then
+      add_hl(lnum, 0, -1, "SuperMarkdownH2")
+    elseif l:match("%[󰄵 APPROVED") then
       pcall(vim.api.nvim_buf_set_extmark, hud_buf, NS_EYEBALL, lnum, 3, {
         end_col = 19,
         hl_group = "SuperMarkdownReviewApproved",
         priority = 90,
       })
+      hl_pattern(lnum, "%(L%d+%)", "Comment")
+      hl_pattern(lnum, "%([^%)]+%)", "SuperMarkdownInlineCode")
     elseif l:match("%[󰀦 REVISION") then
       pcall(vim.api.nvim_buf_set_extmark, hud_buf, NS_EYEBALL, lnum, 3, {
         end_col = 19,
         hl_group = "SuperMarkdownReviewRejected",
         priority = 90,
       })
+      hl_pattern(lnum, "%(L%d+%)", "Comment")
+      hl_pattern(lnum, "%([^%)]+%)", "SuperMarkdownInlineCode")
     elseif l:match("%[󰋽 QUESTION") then
       pcall(vim.api.nvim_buf_set_extmark, hud_buf, NS_EYEBALL, lnum, 3, {
         end_col = 19,
         hl_group = "SuperMarkdownCheckboxQuestion",
         priority = 90,
       })
+      hl_pattern(lnum, "%(L%d+%)", "Comment")
+      hl_pattern(lnum, "%([^%)]+%)", "SuperMarkdownInlineCode")
     elseif l:match("%[󰄱 UNREVIEWED") then
       pcall(vim.api.nvim_buf_set_extmark, hud_buf, NS_EYEBALL, lnum, 3, {
         end_col = 19,
         hl_group = "Comment",
         priority = 90,
       })
+      hl_pattern(lnum, "%(L%d+%)", "Comment")
+      hl_pattern(lnum, "%([^%)]+%)", "SuperMarkdownInlineCode")
     end
   end
+
+  -- Bottom divider and footer
+  add_hl(#lines - 2, 0, -1, "SuperMarkdownDivider")
+  hl_pattern(#lines - 1, "%[<CR>%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[a%]", "SuperMarkdownReviewKeyApprove")
+  hl_pattern(#lines - 1, "%[r%]", "SuperMarkdownReviewKeyReject")
+  hl_pattern(#lines - 1, "%[q%]", "SuperMarkdownReviewKeyQuestion")
+  hl_pattern(#lines - 1, "%[s%]", "SuperMarkdownReviewKeyNav")
+  hl_pattern(#lines - 1, "%[e%]", "SuperMarkdownReviewKeyExport")
+  hl_pattern(#lines - 1, "%[q/Esc%]", "Comment")
 
   -- Keybindings inside HUD
   local bopts = { buffer = hud_buf, silent = true, nowait = true }
