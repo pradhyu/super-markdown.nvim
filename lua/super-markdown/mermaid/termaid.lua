@@ -12,8 +12,18 @@ local STYLE_MAP = {
   arrow = "SuperMarkdownMermaidArrow",
   label = "SuperMarkdownMermaidNodeLabel",
   edge_label = "SuperMarkdownMermaidEdgeLabel",
-  subgraph = "SuperMarkdownH3",
+  subgraph = "SuperMarkdownCodeBorder",
+  subgraph_label = "SuperMarkdownH3",
   default = "None",
+}
+
+local SECTION_HLS = {
+  "SuperMarkdownH1",
+  "SuperMarkdownH2",
+  "SuperMarkdownH3",
+  "SuperMarkdownH4",
+  "SuperMarkdownH5",
+  "SuperMarkdownH6",
 }
 
 --- Find the best command to invoke termaid
@@ -83,12 +93,18 @@ local function style_to_hl(style)
   if STYLE_MAP[style] then
     return STYLE_MAP[style]
   end
+  local sec_idx = style:match("^section:(%d+)")
+  if sec_idx then
+    local n = (tonumber(sec_idx) or 0) % #SECTION_HLS + 1
+    return SECTION_HLS[n]
+  end
+  if style:match("^sectionfg:") then
+    return "SuperMarkdownMermaidNodeLabel"
+  end
   if style:match("^class:") or style:match("^nodestyle:") then
     return "SuperMarkdownMermaidNodeLabel"
   elseif style:match("^linkstyle:") then
     return "SuperMarkdownMermaidArrow"
-  elseif style:match("^section:") then
-    return "SuperMarkdownH3"
   elseif style:match("label") then
     return "SuperMarkdownMermaidNodeLabel"
   elseif style:match("edge") or style:match("arrow") then
