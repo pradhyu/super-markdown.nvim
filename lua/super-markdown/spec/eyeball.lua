@@ -132,7 +132,7 @@ function M.open(bufnr)
 
   add_line("")
   add_line(" " .. string.rep("─", 74))
-  add_line(" [<CR>]: Jump · [a]: Approve · [r]: Reject · [q]: Question · [s]: Skim · [e]: Export · [q/Esc]: Close")
+  add_line(" [<CR>]: Jump · [a]: Approve · [r]: Reject · [?]: Question · [s]: Skim · [e]: Export · [q/Esc]: Close")
 
   hud_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[hud_buf].bufhidden = "wipe"
@@ -247,7 +247,7 @@ function M.open(bufnr)
   hl_pattern(#lines - 1, "%[<CR>%]", "SuperMarkdownReviewKeyNav")
   hl_pattern(#lines - 1, "%[a%]", "SuperMarkdownReviewKeyApprove")
   hl_pattern(#lines - 1, "%[r%]", "SuperMarkdownReviewKeyReject")
-  hl_pattern(#lines - 1, "%[q%]", "SuperMarkdownReviewKeyQuestion")
+  hl_pattern(#lines - 1, "%[%?%]", "SuperMarkdownReviewKeyQuestion")
   hl_pattern(#lines - 1, "%[s%]", "SuperMarkdownReviewKeyNav")
   hl_pattern(#lines - 1, "%[e%]", "SuperMarkdownReviewKeyExport")
   hl_pattern(#lines - 1, "%[q/Esc%]", "Comment")
@@ -303,16 +303,20 @@ function M.open(bufnr)
     end
   end, bopts)
 
-  -- Add question
-  vim.keymap.set("n", "k", function()
+  -- Add question (? or Q)
+  local function add_question()
     local cursor_row = vim.api.nvim_win_get_cursor(hud_win)[1]
     local sec = line_sections[cursor_row]
     if sec and sec.lnum then
       pcall(vim.api.nvim_win_set_cursor, source_win, { sec.lnum, 0 })
       M.close()
       review_mod.review_question(source_buf)
+    else
+      vim.notify("SuperMarkdown: Move cursor to a section line to add directive", vim.log.levels.INFO)
     end
-  end, bopts)
+  end
+  vim.keymap.set("n", "?", add_question, bopts)
+  vim.keymap.set("n", "Q", add_question, bopts)
 
   -- Toggle Skim Mode
   vim.keymap.set("n", "s", function()
