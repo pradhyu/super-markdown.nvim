@@ -168,12 +168,20 @@ Built for modern developers who write, maintain, and navigate technical specific
 ### 9. Human-in-the-Loop Review & AI Agent Change Eyeballer
 As markdowns have become the **new executable code for specifications written by AI agents** (Cursor, Claude Code, Cline, Aider, Devin, Gemini CLI, Copilot Workspace), human reviewers need to quickly go over, review, and eyeball massive agent-generated markdown files without getting drowned in boilerplate prose:
 
+- **Interactive Spec Review Cockpit HUD (`<leader>mrs` / `:SuperMarkdown review_session`)**:
+  - Floating bottom-docked review stepper that walks you through the specification section-by-section while automatically scrolling and centering the background editor.
+  - Displays live Git diff telemetry (`git: +X ~Y -Z`), task progress, open questions, blockers, and security/DB hazard alerts.
+  - Single-key actions: `a` approve section, `r` request revision with reason, `?`/`Q` direct AI agent, `c` comment, `x`/`e` export directives to clipboard, `n`/`j` next section, `p`/`k` previous section.
+- **Domain Entity & Contract Invariant Validator (`<leader>mSi` / `:SuperMarkdown invariants`)**:
+  - Cross-section consistency auditor that extracts HTTP endpoints, environment variables, SQL tables, and error codes to flag route pluralization drift (e.g., `/v2/charges` vs `/v2/charge`), undeclared environment variables in code blocks, and missing idempotency headers.
+- **Bidirectional Requirement-to-Code Traceability Matrix (`<leader>mSt` / `:SuperMarkdown traceability`)**:
+  - Interactive floating tree mapping every `REQ-*`, `AC-*`, and `Scenario:` block to its `@impl:` and `@test:` repository files, computing live implementation and test coverage percentages with `<CR>` jump-to-file.
 - **Interactive Spec Eyeballer & Scorecard HUD (`<leader>mE` / `:SuperMarkdown eyeball`)**:
   - Interactive floating dashboard giving you an executive birds-eye view:
     - **Speed & Length Metrics**: Total lines, word count, estimated deep reading time vs 30-second skim time.
     - **Spec Readiness Score**: (0-100) combining task completion, acceptance criteria coverage, unresolved questions, blockers, and risk flags.
     - **Review Matrix by Section**: Displays each section with a review badge (`[󰄵 APPROVED]`, `[󰀦 REVISION]`, `[󰋽 QUESTION]`, or `[󰄱 UNREVIEWED]`), task tally (`󰄵 4/4`), risk tally (`󰳦 1 risk`), and line number.
-    - **Single-Key Actions inside HUD**: Press `<CR>` to jump to section, `a` to approve, `r` to request revision, `q` to add directive, `s` to toggle Skim mode, `e` to export feedback prompt!
+    - **Single-Key Actions inside HUD**: Navigate freely with `j`/`k`, press `<CR>` to jump to section, `a` to approve, `r` to request revision, `?`/`Q` to add directive, `s` to toggle Skim mode, `e` to export feedback prompt!
 - **Executive Skim / X-Ray Mode (`<leader>msm` / `:SuperMarkdown skim`)**:
   - Automatically dims dense prose paragraphs, instantly highlighting only the structural skeleton of the spec: headings, tables, BDD scenarios, checklists, callouts, and Mermaid diagrams. Eyeball a 2,000-line spec in under 30 seconds!
 - **AI Boilerplate & Fluff Radar**:
@@ -299,6 +307,9 @@ If you have cloned the repository locally to `~/git/super-markdown.nvim`:
 | Normal | `]q` / `[q` | `:SuperMarkdown next/prev_question` | Jump to next / previous open question (`[?]`) |
 | Normal | `]b` / `[b` | `:SuperMarkdown next/prev_blocker` | Jump to next / previous blocker (`[!]`) |
 | Normal | `]t` / `[t` | `:SuperMarkdown next/prev_task` | Jump to next / previous pending task (`[ ]`) |
+| Normal | `<leader>mrs`| `:SuperMarkdown review_session` | Open Interactive Spec Review Cockpit HUD |
+| Normal | `<leader>mSi`| `:SuperMarkdown invariants` | Check Domain Entity & Contract Invariants |
+| Normal | `<leader>mSt`| `:SuperMarkdown traceability` | Open Bidirectional Requirement-to-Code Traceability Matrix |
 | Normal | `<leader>mra`| `:SuperMarkdown review_approve` | Stamp active section as human `[!APPROVED]` |
 | Normal | `<leader>mrr`| `:SuperMarkdown review_reject` | Request active section revision `[!REJECTED]` |
 | Normal | `<leader>mrq`| `:SuperMarkdown review_question` | Leave directive/question for AI agent `[!QUESTION]` |
