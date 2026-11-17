@@ -102,7 +102,6 @@ graph TD
     B -->|Mermaid| D[Kitty Graphics / ASCII]
     B -->|TOC| E[Telescope Live Search]
     C --> F[Seamless Experience]
-    D -> C
     D --> F
     E --> F
 ```
