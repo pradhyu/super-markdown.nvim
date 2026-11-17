@@ -566,8 +566,12 @@ function M.refresh()
     end
   end
 
-  M.sync_cursor()
+  M.sync_cursor(true)
 end
+
+local last_synced_line = nil
+local last_active_idx = nil
+local last_preview_row = nil
 
 local function get_current_source_line()
   local ok_p, pp = pcall(require, "super-markdown.preview_pane")
@@ -583,9 +587,14 @@ local function get_current_source_line()
   return 1
 end
 
-function M.sync_cursor()
+function M.sync_cursor(force)
   if not M.is_open() then
     return
+  end
+  if force then
+    last_synced_line = nil
+    last_active_idx = nil
+    last_preview_row = nil
   end
   -- Don't override sidebar highlight while user is actively browsing inside sidebar
   if sidebar_win and vim.api.nvim_win_is_valid(sidebar_win) and vim.api.nvim_get_current_win() == sidebar_win then
@@ -593,6 +602,11 @@ function M.sync_cursor()
   end
 
   local cursor_line = get_current_source_line()
+  if not force and cursor_line == last_synced_line then
+    return
+  end
+  last_synced_line = cursor_line
+
   local active_idx = nil
 
   for idx, item in ipairs(visible_items) do
@@ -604,6 +618,10 @@ function M.sync_cursor()
   end
 
   if active_idx and sidebar_buf and vim.api.nvim_buf_is_valid(sidebar_buf) then
+    if not force and active_idx == last_active_idx then
+      return
+    end
+    last_active_idx = active_idx
     pcall(vim.api.nvim_buf_clear_namespace, sidebar_buf, NS_ACTIVE, 0, -1)
     local target_line = active_idx + 1 -- accounting for 2 header lines
     pcall(vim.api.nvim_buf_set_extmark, sidebar_buf, NS_ACTIVE, target_line, 0, {
@@ -619,6 +637,11 @@ function M.preview_heading()
   if #visible_items == 0 then return end
 
   local cursor_row = vim.api.nvim_win_get_cursor(sidebar_win)[1]
+  if cursor_row == last_preview_row then
+    return
+  end
+  last_preview_row = cursor_row
+  last_active_idx = nil
   local heading_idx = cursor_row - 2
   if heading_idx < 1 then
     heading_idx = 1

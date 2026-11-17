@@ -136,37 +136,59 @@ function M.render(bufnr)
         tables.render_block(bufnr, NS_ID, tbl_start, tbl_end, lines, r_opts.tables)
         -- Render inline links, spec tags, and inline code pills inside table rows as well
         for tl = tbl_start, tbl_end do
-          if not tables.is_table_separator(lines[tl + 1]) then
-            links.render(bufnr, NS_ID, tl, lines[tl + 1], r_opts.links)
-            spec_tags.render(bufnr, NS_ID, tl, lines[tl + 1], r_opts.spec_tags)
-            inline_code.render(bufnr, NS_ID, tl, lines[tl + 1], r_opts.inline_code)
+          local tline = lines[tl + 1]
+          if not tables.is_table_separator(tline) then
+            if tline:find("[", 1, true) or tline:find("http", 1, true) then
+              links.render(bufnr, NS_ID, tl, tline, r_opts.links)
+            end
+            if tline:find("@", 1, true) or tline:find("-", 1, true) or tline:find(":", 1, true) then
+              spec_tags.render(bufnr, NS_ID, tl, tline, r_opts.spec_tags)
+            end
+            if tline:find("`", 1, true) then
+              inline_code.render(bufnr, NS_ID, tl, tline, r_opts.inline_code)
+            end
           end
         end
         lnum = tbl_end + 1
+      elseif line == "" then
+        prev_callout = nil
+        lnum = lnum + 1
       else
         -- 3. Headings (with spec progress & traceability badges)
-        headings.render(bufnr, NS_ID, lnum, line, r_opts.headings, sec_by_lnum[lnum + 1])
+        if line:byte(1) == 35 then -- '#'
+          headings.render(bufnr, NS_ID, lnum, line, r_opts.headings, sec_by_lnum[lnum + 1])
+        end
 
         -- 4. Checkboxes & Tasks
-        checkboxes.render(bufnr, NS_ID, lnum, line, r_opts.checkboxes)
+        if line:find("[", 1, true) then
+          checkboxes.render(bufnr, NS_ID, lnum, line, r_opts.checkboxes)
+        end
 
         -- 5. Bullet Lists, Indent Guides, Ordered Lists & Key-Value Contrast
         lists.render(bufnr, NS_ID, lnum, line, r_opts.lists)
 
         -- 6. Callouts & Blockquotes
-        prev_callout = callouts.render(bufnr, NS_ID, lnum, line, prev_callout, r_opts.callouts)
+        if prev_callout ~= nil or line:find(">", 1, true) then
+          prev_callout = callouts.render(bufnr, NS_ID, lnum, line, prev_callout, r_opts.callouts)
+        end
 
         -- 7. Dividers
         divider.render(bufnr, NS_ID, lnum, line, r_opts.dividers)
 
         -- 8. Links
-        links.render(bufnr, NS_ID, lnum, line, r_opts.links)
+        if line:find("[", 1, true) or line:find("http", 1, true) then
+          links.render(bufnr, NS_ID, lnum, line, r_opts.links)
+        end
 
         -- 9. Spec Tags (@impl, @test, REQ-IDs, Document Status)
-        spec_tags.render(bufnr, NS_ID, lnum, line, r_opts.spec_tags)
+        if line:find("@", 1, true) or line:find("-", 1, true) or line:find(":", 1, true) then
+          spec_tags.render(bufnr, NS_ID, lnum, line, r_opts.spec_tags)
+        end
 
         -- 10. Inline Code Pills
-        inline_code.render(bufnr, NS_ID, lnum, line, r_opts.inline_code)
+        if line:find("`", 1, true) then
+          inline_code.render(bufnr, NS_ID, lnum, line, r_opts.inline_code)
+        end
 
         -- 11. Acceptance Criteria & BDD Scenarios (Given/When/Then)
         bdd.render(bufnr, NS_ID, lnum, line, r_opts.bdd)

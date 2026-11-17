@@ -87,46 +87,91 @@ local function lua_line_diff(old_lines, new_lines)
   return hunks, stats
 end
 
+local git_file_cache = {} -- file_path -> { is_git = bool, dir = string, rel_path = string }
+local git_head_cache = {} -- key (file_path:base_ref) -> { old_lines = table|nil, ts = number }
+local diff_compute_cache = {} -- bufnr -> { tick = number, base_ref = string, ts = number, hunks = table, stats = table, sec_diffs = table }
+local GIT_HEAD_TTL_NS = 5 * 1e9 -- 5 seconds
+
 --- Extract diff against git HEAD or fallback
 --- @param bufnr number
 --- @param base_ref? string (e.g. "HEAD")
 --- @return table hunks, table stats
 function M.compute_diff(bufnr, base_ref)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return {}, { added = 0, modified = 0, deleted = 0 }
+  end
   local file_path = vim.api.nvim_buf_get_name(bufnr)
   if file_path == "" then
     return {}, { added = 0, modified = 0, deleted = 0 }
   end
 
   base_ref = base_ref or "HEAD"
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local now = vim.uv.hrtime()
+  local dc = diff_compute_cache[bufnr]
+  if dc and dc.tick == tick and dc.base_ref == base_ref and (now - dc.ts) < GIT_HEAD_TTL_NS then
+    return dc.hunks, dc.stats
+  end
+
   local cur_lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
 
-  -- Try git diff if inside git repo
-  local dir = vim.fs.dirname(file_path)
-  local is_git = vim.fn.system(string.format("git -C %s rev-parse --is-inside-work-tree 2>/dev/null", vim.fn.shellescape(dir))):match("true")
+  -- Resolve and cache git repository metadata for file_path
+  local ginfo = git_file_cache[file_path]
+  if not ginfo then
+    local dir = vim.fs.dirname(file_path)
+    local is_git = vim.fn.system(string.format("git -C %s rev-parse --is-inside-work-tree 2>/dev/null", vim.fn.shellescape(dir))):match("true") ~= nil
+    local rel_path = ""
+    if is_git then
+      rel_path = vim.fn.system(string.format("git -C %s ls-files --full-name %s 2>/dev/null", vim.fn.shellescape(dir), vim.fn.shellescape(file_path))):gsub("%s+$", "")
+    end
+    ginfo = { is_git = is_git, dir = dir, rel_path = rel_path }
+    git_file_cache[file_path] = ginfo
+  end
 
-  if is_git then
-    local rel_path = vim.fn.system(string.format("git -C %s ls-files --full-name %s 2>/dev/null", vim.fn.shellescape(dir), vim.fn.shellescape(file_path))):gsub("%s+$", "")
-    if rel_path ~= "" then
-      -- Get HEAD version of the file
-      local old_content = vim.fn.system(string.format("git -C %s show %s:%s 2>/dev/null", vim.fn.shellescape(dir), base_ref, vim.fn.shellescape(rel_path)))
+  local hunks, stats = nil, nil
+
+  if ginfo.is_git and ginfo.rel_path ~= "" then
+    local head_key = file_path .. ":" .. base_ref
+    local hcache = git_head_cache[head_key]
+    local old_lines = nil
+    if hcache and (now - hcache.ts) < GIT_HEAD_TTL_NS then
+      old_lines = hcache.old_lines
+    else
+      local old_content = vim.fn.system(string.format("git -C %s show %s:%s 2>/dev/null", vim.fn.shellescape(ginfo.dir), base_ref, vim.fn.shellescape(ginfo.rel_path)))
       if vim.v.shell_error == 0 then
-        local old_lines = vim.split(old_content, "\n", { plain = true })
+        old_lines = vim.split(old_content, "\n", { plain = true })
         if old_lines[#old_lines] == "" then
           table.remove(old_lines, #old_lines)
         end
-        return lua_line_diff(old_lines, cur_lines)
       end
+      git_head_cache[head_key] = { old_lines = old_lines, ts = now }
+    end
+
+    if old_lines then
+      hunks, stats = lua_line_diff(old_lines, cur_lines)
     end
   end
 
   -- Fallback: compare with saved file on disk if buffer is modified
-  if vim.fn.filereadable(file_path) == 1 then
-    local disk_lines = vim.fn.readfile(file_path)
-    return lua_line_diff(disk_lines, cur_lines)
+  if not hunks then
+    if vim.fn.filereadable(file_path) == 1 then
+      local disk_lines = vim.fn.readfile(file_path)
+      hunks, stats = lua_line_diff(disk_lines, cur_lines)
+    else
+      hunks, stats = {}, { added = 0, modified = 0, deleted = 0 }
+    end
   end
 
-  return {}, { added = 0, modified = 0, deleted = 0 }
+  diff_compute_cache[bufnr] = {
+    tick = tick,
+    base_ref = base_ref,
+    ts = now,
+    hunks = hunks,
+    stats = stats,
+    sec_diffs = nil,
+  }
+  return hunks, stats
 end
 
 --- Get diff stats aggregated by section heading
@@ -134,7 +179,14 @@ end
 --- @return table<number, table> section_diffs (heading_lnum -> { added, modified, deleted })
 function M.get_section_diffs(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return {}
+  end
   local hunks, _ = M.compute_diff(bufnr)
+  local dc = diff_compute_cache[bufnr]
+  if dc and dc.sec_diffs then
+    return dc.sec_diffs
+  end
   local analysis = analyzer.analyze(bufnr)
   local sections = analysis.sections or {}
   local sec_diffs = {}
@@ -172,6 +224,9 @@ function M.get_section_diffs(bufnr)
     end
   end
 
+  if dc then
+    dc.sec_diffs = sec_diffs
+  end
   return sec_diffs
 end
 

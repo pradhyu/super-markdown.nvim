@@ -49,8 +49,22 @@ function M.resolve_markdown_buf(bufnr)
   return bufnr
 end
 
+local headings_cache = {} -- bufnr -> { tick = number, diff_on = boolean, headings = table }
+
 function M.get_headings(bufnr)
   bufnr = M.resolve_markdown_buf(bufnr)
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
+    return {}
+  end
+
+  local ok_df, diff_mod = pcall(require, "super-markdown.spec.diff")
+  local diff_on = (ok_df and diff_mod.is_enabled and diff_mod.is_enabled(bufnr)) or false
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local cached = headings_cache[bufnr]
+  if cached and cached.tick == tick and cached.diff_on == diff_on then
+    return cached.headings
+  end
+
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local headings = {}
   local icons = config.options.render.headings.icons or { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " }
@@ -64,8 +78,7 @@ function M.get_headings(bufnr)
   end
 
   local sec_diffs = {}
-  local ok_df, diff_mod = pcall(require, "super-markdown.spec.diff")
-  if ok_df and diff_mod.get_section_diffs and diff_mod.is_enabled and diff_mod.is_enabled(bufnr) then
+  if diff_on and diff_mod.get_section_diffs then
     pcall(function()
       sec_diffs = diff_mod.get_section_diffs(bufnr) or {}
     end)
@@ -138,6 +151,7 @@ function M.get_headings(bufnr)
     end
   end
 
+  headings_cache[bufnr] = { tick = tick, diff_on = diff_on, headings = headings }
   return headings
 end
 

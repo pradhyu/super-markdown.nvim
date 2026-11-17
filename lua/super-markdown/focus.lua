@@ -413,12 +413,22 @@ function M.setup_provider()
 
       local cursor = vim.api.nvim_win_get_cursor(win)
       local cur_line = cursor[1]
-      local from, to = M.get_block_range(bufnr, cur_line)
-
+      local tick = vim.api.nvim_buf_get_changedtick(bufnr)
       if not buf_states[bufnr] then
         buf_states[bufnr] = { enabled = true }
       end
-      buf_states[bufnr].last_range = { from, to }
+      local st = buf_states[bufnr]
+      local cur_scope = M.get_scope(bufnr)
+      local from, to
+      if st.last_range and st.last_tick == tick and st.last_cur_line == cur_line and st.last_scope == cur_scope then
+        from, to = st.last_range[1], st.last_range[2]
+      else
+        from, to = M.get_block_range(bufnr, cur_line)
+        st.last_range = { from, to }
+        st.last_tick = tick
+        st.last_cur_line = cur_line
+        st.last_scope = cur_scope
+      end
 
       local dim_hl = (config.options and config.options.focus and config.options.focus.dim_hl) or "SuperMarkdownDimmed"
       local prio = (config.options and config.options.focus and config.options.focus.priority) or 250

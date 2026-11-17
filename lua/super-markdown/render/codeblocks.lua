@@ -59,32 +59,46 @@ local LEXICAL_TYPES = {
   ["TIMESTAMP"] = true, ["SERIAL"] = true, ["UUID"] = true, ["JSONB"] = true,
 }
 
+local _has_md_injections = nil
+local _ts_lang_support = {} -- ts_lang -> boolean
+
 local function has_treesitter_injection(bufnr, lang)
   if not lang or lang == "" then return false end
-  local ts_lang = TS_LANG_ALIASES[lang] or lang
   -- Verify Treesitter highlighter is actively running on this markdown buffer
   if not (vim.treesitter and vim.treesitter.highlighter and vim.treesitter.highlighter.active and vim.treesitter.highlighter.active[bufnr]) then
     return false
   end
-  -- Verify markdown injection query exists
-  local ok_inj, inj_q = pcall(vim.treesitter.query.get, "markdown", "injections")
-  if not ok_inj or not inj_q then
+  if _has_md_injections == nil then
+    local ok_inj, inj_q = pcall(vim.treesitter.query.get, "markdown", "injections")
+    _has_md_injections = (ok_inj and inj_q ~= nil) or false
+  end
+  if not _has_md_injections then
     return false
   end
+
+  local ts_lang = TS_LANG_ALIASES[lang] or lang
+  if _ts_lang_support[ts_lang] ~= nil then
+    return _ts_lang_support[ts_lang]
+  end
+
   -- Verify target language parser AND its highlights.scm query exist
+  local has_parser = false
   if vim.treesitter.language and vim.treesitter.language.add then
     local ok_add, res = pcall(vim.treesitter.language.add, ts_lang)
-    if not ok_add or res == false then
-      return false
-    end
+    has_parser = (ok_add and res ~= false) or false
   else
     local ok_p, parser = pcall(vim.treesitter.get_string_parser, "", ts_lang)
-    if not ok_p or not parser then
-      return false
-    end
+    has_parser = (ok_p and parser ~= nil) or false
   end
+  if not has_parser then
+    _ts_lang_support[ts_lang] = false
+    return false
+  end
+
   local ok_hq, hq = pcall(vim.treesitter.query.get, ts_lang, "highlights")
-  return ok_hq and hq ~= nil
+  local supported = (ok_hq and hq ~= nil) or false
+  _ts_lang_support[ts_lang] = supported
+  return supported
 end
 
 local function apply_lexical_highlights(bufnr, ns_id, lnum, line, lang)

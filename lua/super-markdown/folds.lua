@@ -78,30 +78,46 @@ function M.foldexpr(lnum)
   return "="
 end
 
+local foldtext_cache = {} -- bufnr -> { tick = number, items = { [key] = string } }
+
 --- Custom foldtext display showing indentation, closed folder icon, heading icon, title, spec task rollup, and line count
 --- @return string
 function M.foldtext()
   local start_lnum = vim.v.foldstart
   local end_lnum = vim.v.foldend
+  local bufnr = vim.api.nvim_get_current_buf()
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local fc = foldtext_cache[bufnr]
+  if not fc or fc.tick ~= tick then
+    fc = { tick = tick, items = {} }
+    foldtext_cache[bufnr] = fc
+  end
+  local cache_key = start_lnum .. ":" .. end_lnum
+  if fc.items[cache_key] then
+    return fc.items[cache_key]
+  end
+
   local count = end_lnum - start_lnum + 1
   local start_line = vim.fn.getline(start_lnum)
 
   -- Scan folded lines for task completion, blockers, and questions
   local checked, total_tasks, blockers, questions = 0, 0, 0, 0
-  for l = start_lnum, end_lnum do
-    local line = vim.fn.getline(l)
-    local cb = line:match("^%s*[%-%*%+]%s+%[(.)%]") or line:match("^%s*%d+%.%s+%[(.)%]")
-    if cb then
-      if cb == "x" or cb == "X" then
-        checked = checked + 1
-        total_tasks = total_tasks + 1
-      elseif cb == " " or cb == "/" then
-        total_tasks = total_tasks + 1
-      elseif cb == "!" then
-        blockers = blockers + 1
-        total_tasks = total_tasks + 1
-      elseif cb == "?" then
-        questions = questions + 1
+  local folded_lines = vim.api.nvim_buf_get_lines(bufnr, start_lnum - 1, end_lnum, false)
+  for _, line in ipairs(folded_lines) do
+    if line:find("[", 1, true) then
+      local cb = line:match("^%s*[%-%*%+]%s+%[(.)%]") or line:match("^%s*%d+%.%s+%[(.)%]")
+      if cb then
+        if cb == "x" or cb == "X" then
+          checked = checked + 1
+          total_tasks = total_tasks + 1
+        elseif cb == " " or cb == "/" then
+          total_tasks = total_tasks + 1
+        elseif cb == "!" then
+          blockers = blockers + 1
+          total_tasks = total_tasks + 1
+        elseif cb == "?" then
+          questions = questions + 1
+        end
       end
     end
   end
@@ -119,6 +135,7 @@ function M.foldtext()
   local spec_str = #spec_parts > 0 and ("  [" .. table.concat(spec_parts, " · ") .. "]") or ""
 
   local hashes, title = start_line:match("^%s*(#+)%s*(.*)$")
+  local result
   if hashes then
     local level = math.min(#hashes, 6)
     local h_opts = (config.options and config.options.render and config.options.render.headings) or {}
@@ -126,10 +143,13 @@ function M.foldtext()
     local icon = (icons and icons[level]) or (string.rep("#", level) .. " ")
     local folder = (h_opts.closed_folder_icon ~= false) and (h_opts.closed_folder_icon or "󰉋 ") or ""
     local indent = string.rep("  ", level - 1)
-    return string.format(" %s%s%s%s%s  ⋯ (%d lines)", indent, folder, icon, title, spec_str, count)
+    result = string.format(" %s%s%s%s%s  ⋯ (%d lines)", indent, folder, icon, title, spec_str, count)
+  else
+    result = string.format(" %s%s  ⋯ (%d lines)", vim.trim(start_line), spec_str, count)
   end
 
-  return string.format(" %s%s  ⋯ (%d lines)", vim.trim(start_line), spec_str, count)
+  fc.items[cache_key] = result
+  return result
 end
 
 --- Calculate fold level for preview pane lines

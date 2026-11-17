@@ -4,6 +4,7 @@ local M = {}
 
 --- Resolved path or command to run termaid
 local _cached_cmd = nil
+local _cached_available = nil
 
 --- Highlight mapping for termaid's styled-json tokens
 local STYLE_MAP = {
@@ -94,26 +95,32 @@ function M.get_command()
     end
   end
 
-  -- Fallback to configured string
+  -- Fallback to configured string (cached so we don't re-probe python3 on every render pass)
   local fallback = type(custom_cmd) == "string" and vim.fn.expand(custom_cmd) or "termaid"
-  return { fallback }
+  _cached_cmd = { fallback }
+  return _cached_cmd
 end
 
 --- Clear cached command (e.g. after install or config change)
 function M.clear_cache()
   _cached_cmd = nil
+  _cached_available = nil
 end
 
 --- Check if termaid is installed and executable
 function M.is_available()
+  if _cached_available ~= nil then
+    return _cached_available
+  end
   local cmd_tbl = M.get_command()
   local first = cmd_tbl[1]
   if #cmd_tbl == 1 then
-    return vim.fn.executable(first) == 1
+    _cached_available = (vim.fn.executable(first) == 1)
   else
     local res = vim.system({ unpack(cmd_tbl), "--version" }):wait(1500)
-    return res.code == 0
+    _cached_available = (res.code == 0)
   end
+  return _cached_available
 end
 
 --- Convert termaid styled-json chunk style string to Neovim highlight group

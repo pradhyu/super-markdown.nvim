@@ -442,6 +442,9 @@ local function highlight_code_line_lexical(line, lang)
   return spans
 end
 
+local _ts_query_cache = {} -- ts_lang -> query|false
+local _code_span_cache = {} -- cache_key -> line_spans
+
 --- Highlights a multi-line code block using Treesitter if available, falling back to lexical tokens.
 --- Returns a table mapping 1-indexed line number -> list of `{ start_col, end_col, hl_group }` (0-indexed relative to code line).
 local function highlight_code_block(code_lines, lang)
@@ -454,31 +457,43 @@ local function highlight_code_block(code_lines, lang)
   end
 
   local ts_lang = TS_LANG_ALIASES[lang] or lang
+  local code_str = table.concat(code_lines, "\n")
+  local cache_key = (ts_lang or "") .. "\0" .. code_str
+  if _code_span_cache[cache_key] then
+    return _code_span_cache[cache_key]
+  end
+
   local used_ts = false
 
   if ts_lang and ts_lang ~= "" then
-    local code_str = table.concat(code_lines, "\n")
-    local ok_p, parser = pcall(vim.treesitter.get_string_parser, code_str, ts_lang)
-    if ok_p and parser then
-      local ok_t, trees = pcall(function() return parser:parse() end)
-      local ok_q, query = pcall(vim.treesitter.query.get, ts_lang, "highlights")
-      if ok_t and trees and trees[1] and ok_q and query then
-        local root = trees[1]:root()
-        for id, node in query:iter_captures(root, code_str, 0, -1) do
-          local cap = query.captures[id]
-          if cap and cap ~= "spell" and cap ~= "nospell" then
-            local hl = resolve_capture_hl(cap, ts_lang)
-            if hl then
-              local sr, sc, er, ec = node:range()
-              for r = sr, er do
-                local l_idx = r + 1
-                if line_spans[l_idx] then
-                  local line_len = #code_lines[l_idx]
-                  local s_c = (r == sr) and sc or 0
-                  local e_c = (r == er) and ec or line_len
-                  if e_c > s_c then
-                    table.insert(line_spans[l_idx], { s_c, math.min(line_len, e_c), hl })
-                    used_ts = true
+    local query = _ts_query_cache[ts_lang]
+    if query == nil then
+      local ok_q, q = pcall(vim.treesitter.query.get, ts_lang, "highlights")
+      query = (ok_q and q) or false
+      _ts_query_cache[ts_lang] = query
+    end
+    if query then
+      local ok_p, parser = pcall(vim.treesitter.get_string_parser, code_str, ts_lang)
+      if ok_p and parser then
+        local ok_t, trees = pcall(function() return parser:parse() end)
+        if ok_t and trees and trees[1] then
+          local root = trees[1]:root()
+          for id, node in query:iter_captures(root, code_str, 0, -1) do
+            local cap = query.captures[id]
+            if cap and cap ~= "spell" and cap ~= "nospell" then
+              local hl = resolve_capture_hl(cap, ts_lang)
+              if hl then
+                local sr, sc, er, ec = node:range()
+                for r = sr, er do
+                  local l_idx = r + 1
+                  if line_spans[l_idx] then
+                    local line_len = #code_lines[l_idx]
+                    local s_c = (r == sr) and sc or 0
+                    local e_c = (r == er) and ec or line_len
+                    if e_c > s_c then
+                      table.insert(line_spans[l_idx], { s_c, math.min(line_len, e_c), hl })
+                      used_ts = true
+                    end
                   end
                 end
               end
@@ -495,6 +510,7 @@ local function highlight_code_block(code_lines, lang)
     end
   end
 
+  _code_span_cache[cache_key] = line_spans
   return line_spans
 end
 
@@ -1106,8 +1122,6 @@ function M.refresh()
     return
   end
 
-  highlights.setup()
-
   local saved_p_view = nil
   if preview_win and vim.api.nvim_win_is_valid(preview_win) then
     pcall(function()
@@ -1239,7 +1253,7 @@ local function attach_source_buf_autocmds()
     buffer = source_buf,
     callback = function()
       if vim.api.nvim_get_current_win() ~= preview_win then
-        M.sync_from_source()
+        M.sync_from_source(true)
       end
     end,
   })
@@ -1744,8 +1758,15 @@ function M.set_sync(mode)
   vim.notify("SuperMarkdown Preview " .. get_sync_label() .. " 󰑐", vim.log.levels.INFO)
 end
 
+local last_src_cursor = nil
+local last_src_top = nil
+local last_src_win = nil
+local last_prv_cursor = nil
+local last_prv_top = nil
+local last_prv_win = nil
+
 --- Sync preview pane cursor & viewport from editable source window
-function M.sync_from_source()
+function M.sync_from_source(skip_unchanged)
   local from_src, _ = get_sync_flags()
   if not from_src or is_syncing or not M.is_open() then
     return
@@ -1758,10 +1779,17 @@ function M.sync_from_source()
     return
   end
 
+  local src_cursor = vim.api.nvim_win_get_cursor(s_win)[1]
+  local src_top = vim.fn.line("w0", s_win)
+  if skip_unchanged and src_cursor == last_src_cursor and src_top == last_src_top and preview_win == last_src_win then
+    return true
+  end
+  last_src_cursor = src_cursor
+  last_src_top = src_top
+  last_src_win = preview_win
+
   is_syncing = true
   local ok, _ = pcall(function()
-    local src_cursor = vim.api.nvim_win_get_cursor(s_win)[1]
-    local src_top = vim.fn.line("w0", s_win)
     local target_p_line = map_source_to_preview(src_cursor)
     local total_p = math.max(1, vim.api.nvim_buf_line_count(preview_buf))
     local p_lnum = math.max(1, math.min(total_p, target_p_line))
@@ -1780,7 +1808,7 @@ function M.sync_from_source()
 end
 
 --- Sync editable source window cursor & viewport from preview pane
-function M.sync_from_preview()
+function M.sync_from_preview(skip_unchanged)
   local _, from_prv = get_sync_flags()
   if not from_prv or is_syncing or not M.is_open() then
     return
@@ -1793,10 +1821,17 @@ function M.sync_from_preview()
     return
   end
 
+  local p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
+  local p_top = vim.fn.line("w0", preview_win)
+  if skip_unchanged and p_cursor == last_prv_cursor and p_top == last_prv_top and s_win == last_prv_win then
+    return true
+  end
+  last_prv_cursor = p_cursor
+  last_prv_top = p_top
+  last_prv_win = s_win
+
   is_syncing = true
   local ok, _ = pcall(function()
-    local p_cursor = vim.api.nvim_win_get_cursor(preview_win)[1]
-    local p_top = vim.fn.line("w0", preview_win)
     local target_s_line = map_preview_to_source(p_cursor)
     local total_s = math.max(1, vim.api.nvim_buf_line_count(source_buf))
     local s_lnum = math.max(1, math.min(total_s, target_s_line))
@@ -2358,7 +2393,7 @@ function M.open(opts)
     buffer = preview_buf,
     callback = function()
       if vim.api.nvim_get_current_win() == preview_win then
-        M.sync_from_preview()
+        M.sync_from_preview(true)
         pcall(function()
           local sb = require("super-markdown.toc.sidebar")
           if sb.is_open() then
@@ -2382,9 +2417,9 @@ function M.open(opts)
         return
       end
       if vim.api.nvim_get_current_win() == preview_win then
-        M.sync_from_preview()
+        M.sync_from_preview(true)
       else
-        M.sync_from_source()
+        M.sync_from_source(true)
       end
     end,
   })

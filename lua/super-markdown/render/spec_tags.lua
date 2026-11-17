@@ -37,7 +37,7 @@ function M.render(bufnr, ns_id, lnum, line, opts)
     local s, e, target = line:find("@" .. role .. "%s*:%s*([^%s,`%)%]]+)")
     if s and target then
       local resolved = analyzer.resolve_reference(target, bufnr)
-      local exists = resolved and vim.fn.filereadable(resolved) == 1
+      local exists = resolved and analyzer.is_file_readable(resolved)
       local hl = role == "test" and "SuperMarkdownSpecBadgeTest" or "SuperMarkdownSpecBadgeImpl"
       local status_text = exists and " 󰄵 linked" or " 󰀦 missing"
       local status_hl = exists and "SuperMarkdownCheckboxChecked" or "SuperMarkdownCalloutWarning"

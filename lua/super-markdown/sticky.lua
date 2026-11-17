@@ -172,6 +172,21 @@ function M.update_win(win)
   local float_data = active_floats[win]
   local fwin = float_data and float_data.float_win
   local fbuf = float_data and float_data.float_buf
+  local lines_key = table.concat(lines, "\n")
+
+  if
+    float_data
+    and fwin
+    and vim.api.nvim_win_is_valid(fwin)
+    and fbuf
+    and vim.api.nvim_buf_is_valid(fbuf)
+    and float_data.lines_key == lines_key
+    and float_data.win_w == win_w
+    and float_data.row == row
+  then
+    float_data.stacked = stacked
+    return
+  end
 
   if not (fbuf and vim.api.nvim_buf_is_valid(fbuf)) then
     fbuf = vim.api.nvim_create_buf(false, true)
@@ -179,26 +194,12 @@ function M.update_win(win)
     vim.bo[fbuf].bufhidden = "wipe"
     vim.bo[fbuf].swapfile = false
     vim.bo[fbuf].filetype = "supermarkdown_sticky"
-  end
 
-  -- Bind interactive jump when clicking or pressing Enter on a stacked header
-  vim.keymap.set("n", "<CR>", function()
-    local cur_row = vim.api.nvim_win_get_cursor(0)[1]
-    local item = stacked[cur_row]
-    if item and win and vim.api.nvim_win_is_valid(win) then
-      pcall(vim.api.nvim_win_set_cursor, win, { item.lnum, 0 })
-      pcall(vim.api.nvim_win_call, win, function()
-        local is_top = (config.options and config.options.toc and config.options.toc.sidebar and config.options.toc.sidebar.scroll_to_top) ~= false
-        vim.cmd(is_top and "normal! zvzt" or "normal! zvzz")
-      end)
-      pcall(vim.api.nvim_set_current_win, win)
-    end
-  end, { buffer = fbuf, silent = true, noremap = true })
-
-  vim.keymap.set({ "n", "v" }, "<LeftMouse>", function()
-    local mouse = vim.fn.getmousepos()
-    if mouse and mouse.line >= 1 then
-      local item = stacked[mouse.line]
+    -- Bind interactive jump once when buffer is created
+    vim.keymap.set("n", "<CR>", function()
+      local cur_row = vim.api.nvim_win_get_cursor(0)[1]
+      local cur_data = active_floats[win]
+      local item = cur_data and cur_data.stacked and cur_data.stacked[cur_row]
       if item and win and vim.api.nvim_win_is_valid(win) then
         pcall(vim.api.nvim_win_set_cursor, win, { item.lnum, 0 })
         pcall(vim.api.nvim_win_call, win, function()
@@ -207,8 +208,24 @@ function M.update_win(win)
         end)
         pcall(vim.api.nvim_set_current_win, win)
       end
-    end
-  end, { buffer = fbuf, silent = true, noremap = true })
+    end, { buffer = fbuf, silent = true, noremap = true })
+
+    vim.keymap.set({ "n", "v" }, "<LeftMouse>", function()
+      local mouse = vim.fn.getmousepos()
+      if mouse and mouse.line >= 1 then
+        local cur_data = active_floats[win]
+        local item = cur_data and cur_data.stacked and cur_data.stacked[mouse.line]
+        if item and win and vim.api.nvim_win_is_valid(win) then
+          pcall(vim.api.nvim_win_set_cursor, win, { item.lnum, 0 })
+          pcall(vim.api.nvim_win_call, win, function()
+            local is_top = (config.options and config.options.toc and config.options.toc.sidebar and config.options.toc.sidebar.scroll_to_top) ~= false
+            vim.cmd(is_top and "normal! zvzt" or "normal! zvzz")
+          end)
+          pcall(vim.api.nvim_set_current_win, win)
+        end
+      end
+    end, { buffer = fbuf, silent = true, noremap = true })
+  end
 
   vim.bo[fbuf].modifiable = true
   vim.api.nvim_buf_set_lines(fbuf, 0, -1, false, lines)
@@ -261,6 +278,9 @@ function M.update_win(win)
     float_win = fwin,
     float_buf = fbuf,
     stacked = stacked,
+    lines_key = lines_key,
+    win_w = win_w,
+    row = row,
   }
 end
 

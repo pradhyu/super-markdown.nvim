@@ -21,6 +21,38 @@ M.AMBIGUOUS_PATTERNS = {
   { pattern = "%f[%a][sS]eamlessly%f[%A]", msg = "Non-testable adverb ('seamlessly') — state the concrete integration contract." },
 }
 
+local analysis_cache = {} -- bufnr -> { tick = number, result = table }
+local file_readable_cache = {} -- path -> { exists = boolean, ts = number }
+local ref_resolve_cache = {} -- key -> { path = string|nil, start_line = number|nil, end_line = number|nil, ts = number }
+local CACHE_TTL_NS = 3 * 1e9 -- 3 seconds in nanoseconds
+
+--- Cached check for file readability to avoid repeated synchronous stat() syscalls
+--- @param path string|nil
+--- @return boolean
+function M.is_file_readable(path)
+  if not path or path == "" then return false end
+  local now = vim.uv.hrtime()
+  local entry = file_readable_cache[path]
+  if entry and (now - entry.ts) < CACHE_TTL_NS then
+    return entry.exists
+  end
+  local exists = vim.fn.filereadable(path) == 1
+  file_readable_cache[path] = { exists = exists, ts = now }
+  return exists
+end
+
+--- Clear cached analysis and filesystem lookups
+--- @param bufnr? number
+function M.clear_cache(bufnr)
+  if bufnr then
+    analysis_cache[bufnr] = nil
+  else
+    analysis_cache = {}
+  end
+  file_readable_cache = {}
+  ref_resolve_cache = {}
+end
+
 --- Resolve a relative or file:// path to a normalized filesystem path
 --- @param raw_path string
 --- @param bufnr number
@@ -32,6 +64,13 @@ function M.resolve_reference(raw_path, bufnr)
   -- Ignore external URLs or pure markdown anchors
   if clean:match("^https?://") or clean:match("^mailto:") or clean:match("^#") then
     return nil
+  end
+
+  local cache_key = tostring(bufnr or 0) .. ":" .. clean
+  local now = vim.uv.hrtime()
+  local cached = ref_resolve_cache[cache_key]
+  if cached and (now - cached.ts) < CACHE_TTL_NS then
+    return cached.path, cached.start_line, cached.end_line
   end
 
   -- Strip file:// prefix
@@ -65,11 +104,13 @@ function M.resolve_reference(raw_path, bufnr)
   }
 
   for _, cand in ipairs(candidates) do
-    if vim.fn.filereadable(cand) == 1 then
+    if M.is_file_readable(cand) then
+      ref_resolve_cache[cache_key] = { path = cand, start_line = start_line, end_line = end_line, ts = now }
       return cand, start_line, end_line
     end
   end
 
+  ref_resolve_cache[cache_key] = { path = file_part, start_line = start_line, end_line = end_line, ts = now }
   return file_part, start_line, end_line
 end
 
@@ -150,8 +191,20 @@ end
 --- @return table analysis
 function M.analyze(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return { bufnr = bufnr, metadata = {}, sections = {}, totals = {}, items = {}, refs = {}, reqs = {}, readiness = 100 }
+  end
+
+  local tick = vim.api.nvim_buf_get_changedtick(bufnr)
+  local cached = analysis_cache[bufnr]
+  if cached and cached.tick == tick then
+    return cached.result
+  end
+
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local metadata = M.parse_metadata(lines)
+  local ok_r, risks_mod = pcall(require, "super-markdown.render.risks")
+  local ok_f, fluff_mod = pcall(require, "super-markdown.render.fluff")
 
   local sections = {}
   local all_items = {} -- semantic items for picker
@@ -437,136 +490,142 @@ function M.analyze(bufnr)
           end
         end
 
-        -- 4b. Critical Risks Detection
-        local ok_r, risks_mod = pcall(require, "super-markdown.render.risks")
-        if ok_r and risks_mod.RULES then
-          for _, rule in ipairs(risks_mod.RULES) do
-            if line:find(rule.pattern) then
-              sec.counts.risks = (sec.counts.risks or 0) + 1
-              totals.risks = totals.risks + 1
-              table.insert(all_items, {
-                kind = "risk",
-                icon = "󰳦 ",
-                lnum = lnum,
-                text = string.format("%s: %s", rule.label, vim.trim(line)),
-                section = sec.title,
-                bufnr = bufnr,
-              })
-              break
+        if line ~= "" then
+          -- 4b. Critical Risks Detection
+          if ok_r and risks_mod.RULES then
+            for _, rule in ipairs(risks_mod.RULES) do
+              if line:find(rule.pattern) then
+                sec.counts.risks = (sec.counts.risks or 0) + 1
+                totals.risks = totals.risks + 1
+                table.insert(all_items, {
+                  kind = "risk",
+                  icon = "󰳦 ",
+                  lnum = lnum,
+                  text = string.format("%s: %s", rule.label, vim.trim(line)),
+                  section = sec.title,
+                  bufnr = bufnr,
+                })
+                break
+              end
             end
           end
-        end
 
-        -- 4c. Acceptance Criteria & BDD Scenarios (Given/When/Then, AC-*)
-        if line:match("^%s*[Ss]cenario") or line:match("%f[%a]AC%-%d+") then
-          sec.counts.scenarios = (sec.counts.scenarios or 0) + 1
-          totals.scenarios = totals.scenarios + 1
-          table.insert(all_items, {
-            kind = "bdd",
-            icon = "󰄵 ",
-            lnum = lnum,
-            text = vim.trim(line),
-            section = sec.title,
-            bufnr = bufnr,
-          })
-        end
-
-        -- 4d. AI Boilerplate & Fluff
-        local ok_f, fluff_mod = pcall(require, "super-markdown.render.fluff")
-        if ok_f and fluff_mod.PATTERNS then
-          for _, rule in ipairs(fluff_mod.PATTERNS) do
-            if line:find(rule.pattern) then
-              sec.counts.fluff = (sec.counts.fluff or 0) + 1
-              totals.fluff = totals.fluff + 1
-              table.insert(all_items, {
-                kind = "fluff",
-                icon = "󰚩 ",
-                lnum = lnum,
-                text = string.format("%s: %s", rule.label, vim.trim(line)),
-                section = sec.title,
-                bufnr = bufnr,
-              })
-              break
-            end
-          end
-        end
-
-        -- 5. Requirement IDs (e.g. REQ-01, FR-101, NFR-02, SEC-01)
-        for req_id in line:gmatch("%f[%w]([A-Z][A-Z0-9]?[A-Z0-9]?%-%d+)%f[%W]") do
-          local prefix = req_id:match("^([A-Z]+)%-")
-          if prefix == "REQ" or prefix == "FR" or prefix == "NFR" or prefix == "SEC" or prefix == "API" or prefix == "UC" then
-            local entry = {
-              id = req_id,
-              lnum = lnum,
-              line = vim.trim(line),
-              section = sec.title,
-            }
-            table.insert(sec.reqs, entry)
-            table.insert(reqs, entry)
+          -- 4c. Acceptance Criteria & BDD Scenarios (Given/When/Then, AC-*)
+          if line:match("^%s*[Ss]cenario") or line:match("%f[%a]AC%-%d+") then
+            sec.counts.scenarios = (sec.counts.scenarios or 0) + 1
+            totals.scenarios = totals.scenarios + 1
             table.insert(all_items, {
-              kind = "requirement",
-              icon = "󰅒 ",
+              kind = "bdd",
+              icon = "󰄵 ",
               lnum = lnum,
-              text = string.format("%s: %s", req_id, vim.trim(line)),
+              text = vim.trim(line),
               section = sec.title,
               bufnr = bufnr,
             })
           end
-        end
 
-        -- 6. Traceability Tags (@impl: path, @test: path)
-        for _, role in ipairs({ "impl", "test" }) do
-          for tag_target in line:gmatch("@" .. role .. "%s*:%s*([^%s,`%)%]]+)") do
-            local resolved, s_line, e_line = M.resolve_reference(tag_target, bufnr)
-            local exists = resolved and vim.fn.filereadable(resolved) == 1 or false
-            local ref_obj = {
-              role = role,
-              raw = tag_target,
-              path = resolved or tag_target,
-              start_line = s_line,
-              end_line = e_line,
-              exists = exists,
-              lnum = lnum,
-              section = sec.title,
-            }
-            table.insert(sec.refs, ref_obj)
-            table.insert(refs, ref_obj)
-            if role == "impl" then
-              totals.impl_refs = totals.impl_refs + 1
-            else
-              totals.test_refs = totals.test_refs + 1
+          -- 4d. AI Boilerplate & Fluff
+          if ok_f and fluff_mod.PATTERNS then
+            for _, rule in ipairs(fluff_mod.PATTERNS) do
+              if line:find(rule.pattern) then
+                sec.counts.fluff = (sec.counts.fluff or 0) + 1
+                totals.fluff = totals.fluff + 1
+                table.insert(all_items, {
+                  kind = "fluff",
+                  icon = "󰚩 ",
+                  lnum = lnum,
+                  text = string.format("%s: %s", rule.label, vim.trim(line)),
+                  section = sec.title,
+                  bufnr = bufnr,
+                })
+                break
+              end
             end
-            table.insert(all_items, {
-              kind = "ref",
-              icon = role == "test" and "󰙨 " or "󰅩 ",
-              lnum = lnum,
-              text = string.format("@%s: %s %s", role, tag_target, exists and "(✓)" or "(missing)"),
-              section = sec.title,
-              bufnr = bufnr,
-            })
           end
-        end
 
-        -- 7. Markdown file links [label](path)
-        for label, target in line:gmatch("%[([^%]]+)%]%(([^%)]+)%)") do
-          local resolved, s_line, e_line = M.resolve_reference(target, bufnr)
-          if resolved then
-            local exists = vim.fn.filereadable(resolved) == 1
-            local is_test = target:find("test") or target:find("spec")
-            local role = is_test and "test" or "link"
-            local ref_obj = {
-              role = role,
-              label = label,
-              raw = target,
-              path = resolved,
-              start_line = s_line,
-              end_line = e_line,
-              exists = exists,
-              lnum = lnum,
-              section = sec.title,
-            }
-            table.insert(sec.refs, ref_obj)
-            table.insert(refs, ref_obj)
+          -- 5. Requirement IDs (e.g. REQ-01, FR-101, NFR-02, SEC-01)
+          if line:find("-", 1, true) then
+            for req_id in line:gmatch("%f[%w]([A-Z][A-Z0-9]?[A-Z0-9]?%-%d+)%f[%W]") do
+              local prefix = req_id:match("^([A-Z]+)%-")
+              if prefix == "REQ" or prefix == "FR" or prefix == "NFR" or prefix == "SEC" or prefix == "API" or prefix == "UC" then
+                local entry = {
+                  id = req_id,
+                  lnum = lnum,
+                  line = vim.trim(line),
+                  section = sec.title,
+                }
+                table.insert(sec.reqs, entry)
+                table.insert(reqs, entry)
+                table.insert(all_items, {
+                  kind = "requirement",
+                  icon = "󰅒 ",
+                  lnum = lnum,
+                  text = string.format("%s: %s", req_id, vim.trim(line)),
+                  section = sec.title,
+                  bufnr = bufnr,
+                })
+              end
+            end
+          end
+
+          -- 6. Traceability Tags (@impl: path, @test: path)
+          if line:find("@", 1, true) then
+            for _, role in ipairs({ "impl", "test" }) do
+              for tag_target in line:gmatch("@" .. role .. "%s*:%s*([^%s,`%)%]]+)") do
+                local resolved, s_line, e_line = M.resolve_reference(tag_target, bufnr)
+                local exists = resolved and M.is_file_readable(resolved) or false
+                local ref_obj = {
+                  role = role,
+                  raw = tag_target,
+                  path = resolved or tag_target,
+                  start_line = s_line,
+                  end_line = e_line,
+                  exists = exists,
+                  lnum = lnum,
+                  section = sec.title,
+                }
+                table.insert(sec.refs, ref_obj)
+                table.insert(refs, ref_obj)
+                if role == "impl" then
+                  totals.impl_refs = totals.impl_refs + 1
+                else
+                  totals.test_refs = totals.test_refs + 1
+                end
+                table.insert(all_items, {
+                  kind = "ref",
+                  icon = role == "test" and "󰙨 " or "󰅩 ",
+                  lnum = lnum,
+                  text = string.format("@%s: %s %s", role, tag_target, exists and "(✓)" or "(missing)"),
+                  section = sec.title,
+                  bufnr = bufnr,
+                })
+              end
+            end
+          end
+
+          -- 7. Markdown file links [label](path)
+          if line:find("](", 1, true) then
+            for label, target in line:gmatch("%[([^%]]+)%]%(([^%)]+)%)") do
+              local resolved, s_line, e_line = M.resolve_reference(target, bufnr)
+              if resolved then
+                local exists = M.is_file_readable(resolved)
+                local is_test = target:find("test") or target:find("spec")
+                local role = is_test and "test" or "link"
+                local ref_obj = {
+                  role = role,
+                  label = label,
+                  raw = target,
+                  path = resolved,
+                  start_line = s_line,
+                  end_line = e_line,
+                  exists = exists,
+                  lnum = lnum,
+                  section = sec.title,
+                }
+                table.insert(sec.refs, ref_obj)
+                table.insert(refs, ref_obj)
+              end
+            end
           end
         end
       end
@@ -610,7 +669,7 @@ function M.analyze(bufnr)
   end
   readiness = math.max(0, math.min(100, readiness))
 
-  return {
+  local result = {
     bufnr = bufnr,
     metadata = metadata,
     sections = sections,
@@ -620,6 +679,8 @@ function M.analyze(bufnr)
     reqs = reqs,
     readiness = readiness,
   }
+  analysis_cache[bufnr] = { tick = tick, result = result }
+  return result
 end
 
 --- Find the spec section containing the given 1-indexed line number
