@@ -102,17 +102,33 @@ local subcommands = {
   spec_invariants = function() require("super-markdown").spec_invariants() end,
   traceability = function() require("super-markdown").traceability() end,
   breadcrumb = function() require("super-markdown").breadcrumb() end,
+  cmd_join = function(_, opts)
+    local s = opts and opts.range ~= 0 and opts.line1 or nil
+    local e = opts and opts.range ~= 0 and opts.line2 or nil
+    require("super-markdown").cmd_join(nil, s, e)
+  end,
+  cmd_split = function(args, opts)
+    local s = opts and opts.range ~= 0 and opts.line1 or nil
+    local e = opts and opts.range ~= 0 and opts.line2 or nil
+    require("super-markdown").cmd_split(nil, s, e, args and args[2])
+  end,
+  cmd_toggle = function(args, opts)
+    local s = opts and opts.range ~= 0 and opts.line1 or nil
+    local e = opts and opts.range ~= 0 and opts.line2 or nil
+    require("super-markdown").cmd_toggle(nil, s, e, args and args[2])
+  end,
 }
 
 vim.api.nvim_create_user_command("SuperMarkdown", function(opts)
   local cmd = opts.fargs[1] or "toggle"
   local fn = subcommands[cmd]
   if fn then
-    fn(opts.fargs)
+    fn(opts.fargs, opts)
   else
     vim.notify("SuperMarkdown: Unknown subcommand '" .. cmd .. "'", vim.log.levels.ERROR)
   end
 end, {
+  range = true,
   nargs = "*",
   complete = function(_, line)
     local words = vim.split(line, "%s+")
@@ -156,6 +172,15 @@ end, {
         return matches
       elseif sub == "mermaid_renderer" then
         local opts = { "auto", "termaid", "internal" }
+        local matches = {}
+        for _, opt in ipairs(opts) do
+          if vim.startswith(opt, words[3] or "") then
+            table.insert(matches, opt)
+          end
+        end
+        return matches
+      elseif sub == "cmd_split" or sub == "cmd_toggle" then
+        local opts = { "bash", "pwsh", "powershell" }
         local matches = {}
         for _, opt in ipairs(opts) do
           if vim.startswith(opt, words[3] or "") then

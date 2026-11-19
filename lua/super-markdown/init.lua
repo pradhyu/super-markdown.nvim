@@ -230,6 +230,11 @@ function M.setup_buffer_keymaps(bufnr)
   bmap("n", km.spec_invariants, M.spec_invariants, "Check Domain Entity & Contract Invariants")
   bmap("n", km.traceability, M.traceability, "Requirement-to-Code Traceability Matrix")
   bmap("n", km.breadcrumb, M.breadcrumb, "Show Active Breadcrumb & Stats HUD")
+  bmap({ "n", "v" }, km.cmd_join, function() M.cmd_join() end, "Combine command lines into one line")
+  bmap({ "n", "v" }, km.cmd_split, function() M.cmd_split() end, "Split command into multiline (auto \\ or `)")
+  bmap({ "n", "v" }, km.cmd_toggle, function() M.cmd_toggle() end, "Toggle single-line / multiline command")
+  bmap({ "n", "v" }, km.cmd_split_bash, function() M.cmd_split(nil, nil, nil, "bash") end, "Split / format multiline with Bash \\")
+  bmap({ "n", "v" }, km.cmd_split_pwsh, function() M.cmd_split(nil, nil, nil, "powershell") end, "Split / format multiline with PowerShell `")
 
   if config.options.tools.table_helpers then
     bmap({ "n", "i" }, km.table_next, table_tool.next_cell, "Next Table Cell")
@@ -416,5 +421,8 @@ M.is_sticky_enabled = sticky.is_enabled
 M.set_scroll_to_top = toc_sidebar.set_scroll_to_top
 M.is_scroll_to_top = toc_sidebar.is_scroll_to_top
 M.toggle_scroll_to_top = function() toc_sidebar.set_scroll_to_top("toggle") end
+M.cmd_join = function(bufnr, s, e) require("super-markdown.tools.cmd_format").join_one_line(bufnr, s, e) end
+M.cmd_split = function(bufnr, s, e, shell) require("super-markdown.tools.cmd_format").split_multiline(bufnr, s, e, shell) end
+M.cmd_toggle = function(bufnr, s, e, shell) require("super-markdown.tools.cmd_format").toggle_multiline(bufnr, s, e, shell) end
 
 return M
